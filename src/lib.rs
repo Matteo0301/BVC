@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
