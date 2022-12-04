@@ -1,10 +1,12 @@
 pub mod bvc {
-    use std::rc::Rc;
+    use std::{cell::RefCell, rc::Rc};
 
     use unitn_market_2022::{
         event::{event::Event, notifiable::Notifiable},
-        good::good::Good,
-        market::Market,
+        good::{good::Good, good_kind::GoodKind},
+        market::{
+            good_label::GoodLabel, BuyError, LockBuyError, Market, MarketGetterError, SellError,
+        },
     };
 
     const NAME: &'static str = "BVC";
@@ -36,8 +38,11 @@ pub mod bvc {
         where
             Self: Sized,
         {
+            Self::new_random();
         }
-        fn get_name(&self) -> &'static str {}
+        fn get_name(&self) -> &'static str {
+            NAME
+        }
 
         fn get_budget(&self) -> f32 {}
 
@@ -64,7 +69,7 @@ pub mod bvc {
             quantity_to_sell: f32,
             offer: f32,
             trader_name: String,
-        ) -> Result<String, LockSellError> {
+        ) -> Result<String, LockBuyError> {
         }
 
         fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {}
