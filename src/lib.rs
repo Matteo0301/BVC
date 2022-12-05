@@ -2,11 +2,11 @@
 mod log_formatter;
 
 pub mod BVC {
-    use chrono::Utc;
+    //use chrono::Utc;
     use std::{
         cell::RefCell,
         collections::{HashMap, HashSet},
-        fmt::Error,
+        //fmt::Error,
         fs::{File, OpenOptions},
         io::prelude::*,
         rc::Rc,
@@ -86,27 +86,27 @@ pub mod BVC {
         }
         fn update_locks(&mut self) {
             //remove buy locks
-            match self.oldest_lock_buy_time {
+            match &self.oldest_lock_buy_time {
                 Use(oldest, trader) if oldest + MAX_LOCK_TIME < self.time => {
-                    let lock = self.buy_locks.get(&trader).unwrap();
+                    let lock = self.buy_locks.get(trader).unwrap();
                     let good = self
                         .good_data
                         .get_mut(&lock.locked_good.get_kind())
                         .unwrap();
-                    good.info.merge(lock.locked_good);
-                    self.buy_locks.remove(&trader);
-                    self.expired_tokens.insert(trader);
+                    good.info.merge(lock.locked_good.clone());
+                    self.buy_locks.remove(trader);
+                    self.expired_tokens.insert(trader.clone());
                     self.active_buy_locks -= 1;
                     self.oldest_lock_buy_time = if self.buy_locks.len() == 0 {
                         Skip
                     } else {
                         let mut oldest = Use(self.time, String::new());
-                        for (trader, good) in self.buy_locks {
+                        for (trader, good) in &self.buy_locks {
                             oldest = match oldest {
                                 Use(time, _) if good.lock_time < time => {
-                                    Use(good.lock_time, trader)
+                                    Use(good.lock_time, trader.clone())
                                 }
-                                other => oldest,
+                                other => other,
                             }
                         }
                         oldest
@@ -116,31 +116,31 @@ pub mod BVC {
             }
 
             //remove sell locks
-            match self.oldest_lock_sell_time {
+            match &self.oldest_lock_sell_time {
                 Use(oldest, trader) if oldest + MAX_LOCK_TIME < self.time => {
-                    let lock = self.sell_locks.get(&trader).unwrap();
+                    let lock = self.sell_locks.get(trader).unwrap();
                     let good = self.good_data.get_mut(&GoodKind::EUR).unwrap();
-                    good.info.merge(lock.locked_good);
+                    good.info.merge(lock.locked_good.clone());
 
-                    self.sell_locks.remove(&trader);
-                    self.expired_tokens.insert(trader);
+                    self.sell_locks.remove(trader);
+                    self.expired_tokens.insert(trader.clone());
                     self.active_sell_locks -= 1;
                     self.oldest_lock_sell_time = if self.sell_locks.len() == 0 {
                         Skip
                     } else {
                         let mut oldest = Use(self.time, String::new());
-                        for (trader, good) in self.sell_locks {
+                        for (trader, good) in &self.sell_locks {
                             oldest = match oldest {
                                 Use(time, _) if good.lock_time < time => {
-                                    Use(good.lock_time, trader)
+                                    Use(good.lock_time, trader.clone())
                                 }
-                                other => oldest,
+                                other => other,
                             }
                         }
                         oldest
                     }
                 }
-                other => (),
+                _ => (),
             }
 
             return;
@@ -159,18 +159,18 @@ pub mod BVC {
                 };
                 let oldest = std::cmp::min(oldest_lock_buy, oldest_lock_sell);
                 if oldest != std::u64::MAX {
-                    self.oldest_lock_buy_time = match self.oldest_lock_buy_time {
-                        Use(time, trader) => Use(time - oldest, trader),
+                    self.oldest_lock_buy_time = match &self.oldest_lock_buy_time {
+                        Use(time, trader) => Use(time - oldest, trader.clone()),
                         Skip => Skip,
                     };
-                    self.oldest_lock_sell_time = match self.oldest_lock_sell_time {
-                        Use(time, trader) => Use(time - oldest, trader),
+                    self.oldest_lock_sell_time = match &self.oldest_lock_sell_time {
+                        Use(time, trader) => Use(time - oldest, trader.clone()),
                         Skip => Skip,
                     };
-                    for (trader, good) in self.buy_locks {
+                    for (_, good) in &mut self.buy_locks {
                         good.lock_time -= oldest;
                     }
-                    for (trader, good) in self.sell_locks {
+                    for (_, good) in &mut self.sell_locks {
                         good.lock_time -= oldest;
                     }
                     self.time = self.time - oldest + 1;
@@ -196,8 +196,8 @@ pub mod BVC {
 
         //to notify other markets
         fn notify_markets(&mut self, event: Event) {
-            for m in self.subscribers {
-                m.on_event(event)
+            for m in &mut self.subscribers {
+                m.on_event(event.clone())
             }
             self.increment_time();
             //TODO implement logging here
@@ -216,7 +216,7 @@ pub mod BVC {
         fn on_event(&mut self, event: Event) {
             match event.kind {
                 EventKind::Wait => self.increment_time(),
-                other => ();
+                _ => (),
             }
         }
     }
@@ -332,10 +332,10 @@ pub mod BVC {
         }
 
         fn get_goods(&self) -> Vec<GoodLabel> {
-            let prices: Vec<GoodLabel> = Vec::new();
-            for (kind, data) in self.good_data {
+            let mut prices: Vec<GoodLabel> = Vec::new();
+            for (kind, data) in &self.good_data {
                 prices.push(GoodLabel {
-                    good_kind: kind, // Does this copy or move ??
+                    good_kind: kind.clone(), // Does this copy or move ??
                     quantity: data.info.get_qty(),
                     exchange_rate_buy: data.buy_exchange_rate,
                     exchange_rate_sell: data.sell_exchange_rate,
@@ -559,10 +559,7 @@ pub mod BVC {
         }
 
         fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
-            let mut res = Good {
-                kind: GoodKind::EUR,
-                quantity: 0.0,
-            };
+            let mut res = Good::new(GoodKind::EUR, 0.0);
 
             if !self.sell_locks.contains_key(&token) {
                 //expired token
@@ -603,7 +600,7 @@ pub mod BVC {
             self.sell_locks.remove(&token);
             self.active_sell_locks -= 1;
             let mut tmp = self.good_data[&good.get_kind()].info.clone();
-            let goodTmp = Good { ..*good };
+            let goodTmp = Good::new(good.get_kind(), good.get_qty());
             tmp.merge(goodTmp);
 
             self.notify_markets(Event {
