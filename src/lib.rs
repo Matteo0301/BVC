@@ -1,59 +1,119 @@
 pub mod BVC {
-    use std::{cell::RefCell, rc::Rc, collections::HashMap};
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
     use unitn_market_2022::{
         event::{event::Event, notifiable::Notifiable},
-        good::{consts::STARTING_CAPITAL, good::Good, good_kind::GoodKind},
+        good::{self, consts::STARTING_CAPITAL, good::Good, good_kind::GoodKind},
         market::{
             good_label::GoodLabel, BuyError, LockBuyError, Market, MarketGetterError, SellError,
         },
     };
-    use TimeEnabler::{Skip,Use};
+    use TimeEnabler::{Skip, Use};
 
     use rand::thread_rng;
     use rand::Rng;
 
-    const NAME : &'static str = "BVC";
-    const MAX_LOCK_TIME : i32 = 12;
-    const MAX_LOCK_BUY_NUM : i32 = 4;
-    const MAX_LOCK_SELL_NUM : i32 = 4;
+    const NAME: &'static str = "BVC";
+    const MAX_LOCK_TIME: u64 = 12;
+    const MAX_LOCK_BUY_NUM: i32 = 4;
+    const MAX_LOCK_SELL_NUM: i32 = 4;
 
     pub struct BVCMarket {
         /* eur: Good,
         usd: Good,
         yen: Good,
         yuan: Good, */
-        time : u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
-        oldest_lock_buy_time : TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
-        oldest_lock_sell_time : TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
-        good_data : HashMap<GoodKind, GoodInfo>,
-        buy_locks : HashMap<String,LockBuyGood>,
-        sell_locks : HashMap<String,LockSellGood>,
-        active_buy_locks : u8,
-        active_sell_locks : u8,
-        subscribers : Vec<Box<dyn Notifiable>>,
+        time: u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
+        oldest_lock_buy_time: TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
+        oldest_lock_sell_time: TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
+        good_data: HashMap<GoodKind, GoodInfo>,
+        buy_locks: HashMap<String, LockBuyGood>,
+        sell_locks: HashMap<String, LockSellGood>,
+        active_buy_locks: u8,
+        active_sell_locks: u8,
+        subscribers: Vec<Box<dyn Notifiable>>,
     }
 
     enum TimeEnabler {
-        Use(u64),
+        Use(u64, String),
         Skip,
     }
 
-    struct GoodInfo{
-        info : Good,
-        buy_exchange_rate : f32,
-        sell_exchange_rate : f32,
+    struct GoodInfo {
+        info: Good,
+        buy_exchange_rate: f32,
+        sell_exchange_rate: f32,
     }
 
-    struct LockBuyGood{
-        locked_good : Good,
-        buy_price : f32,
-        lock_time : i32,
+    struct LockBuyGood {
+        locked_good: Good,
+        buy_price: f32,
+        lock_time: u64,
     }
 
-    struct LockSellGood{
-        locked_quantity : f32,
-        sell_price : f32,
-        lock_time : i32
+    struct LockSellGood {
+        locked_quantity: f32,
+        sell_price: f32,
+        lock_time: u64,
+    }
+
+    impl BVCMarket {
+        fn update_locks(&mut self) {
+            //remove buy locks
+            match self.oldest_lock_buy_time {
+                Use(oldest, trader) => {
+                    if (oldest + MAX_LOCK_TIME < self.time) {
+                        let lock = self.buy_locks.get(&trader).unwrap();
+                        let good = self
+                            .good_data
+                            .get_mut(&lock.locked_good.get_kind())
+                            .unwrap();
+                        good.info.merge(lock.locked_good);
+                        self.buy_locks.remove(&trader);
+                        self.oldest_lock_buy_time = if (self.buy_locks.len() == 0) {
+                            Skip
+                        } else {
+                            let mut oldest = Use(self.time, String::new());
+                            for (trader, good) in self.buy_locks {
+                                oldest = match oldest {
+                                    Use(time, _) if good.lock_time < time => {
+                                        Use(good.lock_time, trader)
+                                    }
+                                    other => oldest,
+                                }
+                            }
+                            oldest
+                        }
+                    }
+                }
+                Skip => (),
+            }
+
+            //remove sell locks
+            match self.oldest_lock_sell_time {
+                Use(oldest, trader) => {
+                    if (oldest + MAX_LOCK_TIME < self.time) {
+                        self.sell_locks.remove(&trader);
+                        self.oldest_lock_sell_time = if (self.sell_locks.len() == 0) {
+                            Skip
+                        } else {
+                            let mut oldest = Use(self.time, String::new());
+                            for (trader, good) in self.sell_locks {
+                                oldest = match oldest {
+                                    Use(time, _) if good.lock_time < time => {
+                                        Use(good.lock_time, trader)
+                                    }
+                                    other => oldest,
+                                }
+                            }
+                            oldest
+                        }
+                    }
+                }
+                Skip => (),
+            }
+
+            return;
+        }
     }
 
     impl Notifiable for BVCMarket {
@@ -103,19 +163,19 @@ pub mod BVC {
                     kind: GoodKind::YUAN,
                     quantity: yuan,
                 }, */
-                time : 0,
-                oldest_lock_buy_time : Skip,
-                oldest_lock_sell_time : Skip,
-                active_buy_locks : 0,
-                active_sell_locks : 0,
-                good_data : HashMap::new(), // Implement starting prices here
-                buy_locks : HashMap::new(),
-                sell_locks : HashMap::new(),
-                subscribers : Vec::new(),
+                time: 0,
+                oldest_lock_buy_time: Skip,
+                oldest_lock_sell_time: Skip,
+                active_buy_locks: 0,
+                active_sell_locks: 0,
+                good_data: HashMap::new(), // Implement starting prices here
+                buy_locks: HashMap::new(),
+                sell_locks: HashMap::new(),
+                subscribers: Vec::new(),
             };
             Rc::new(RefCell::new(m))
         }
-        
+
         fn new_file(path: &str) -> Rc<RefCell<dyn Market>>
         where
             Self: Sized,
@@ -127,17 +187,19 @@ pub mod BVC {
             NAME
         }
 
-        fn get_budget(&self) -> f32 { self.good_data[&GoodKind::EUR].info.get_qty() }
+        fn get_budget(&self) -> f32 {
+            self.good_data[&GoodKind::EUR].info.get_qty()
+        }
 
         fn get_buy_price(&self, kind: GoodKind, quantity: f32) -> Result<f32, MarketGetterError> {
-            if quantity.is_sign_negative(){
+            if quantity.is_sign_negative() {
                 return Err(MarketGetterError::NonPositiveQuantityAsked);
             }
             // Discounts to be implemented, i.e.: if the trader wants to buy more than 50% of the market good, i will apply a scalable discount
             // Remember if the kind is EUROS we must change it 1:1
-            match kind{
+            match kind {
                 GoodKind::EUR => Ok(quantity),
-                _ => Ok(self.good_data[&kind].buy_exchange_rate * quantity)
+                _ => Ok(self.good_data[&kind].buy_exchange_rate * quantity),
             }
         }
 
@@ -147,20 +209,20 @@ pub mod BVC {
             }
             // Discounts to be implemented, i.e.: if the trader wants to sell more than 50% of the good (percentage relative to the quantity of the Market not the Trader's one) i will apply a (less) scalable discount
             // Remember if the kind is EUROS we must change it 1:1
-            match kind{
+            match kind {
                 GoodKind::EUR => Ok(quantity),
-                _ => Ok(self.good_data[&kind].sell_exchange_rate * quantity)
+                _ => Ok(self.good_data[&kind].sell_exchange_rate * quantity),
             }
         }
 
         fn get_goods(&self) -> Vec<GoodLabel> {
-            let prices : Vec<GoodLabel> = Vec::new();
-            for (kind,data) in self.good_data {
-                prices.push(GoodLabel{
-                    good_kind : kind, // Does this copy or move ??
-                    quantity : data.info.get_qty(),
-                    exchange_rate_buy : data.buy_exchange_rate,
-                    exchange_rate_sell : data.sell_exchange_rate,
+            let prices: Vec<GoodLabel> = Vec::new();
+            for (kind, data) in self.good_data {
+                prices.push(GoodLabel {
+                    good_kind: kind, // Does this copy or move ??
+                    quantity: data.info.get_qty(),
+                    exchange_rate_buy: data.buy_exchange_rate,
+                    exchange_rate_sell: data.sell_exchange_rate,
                 });
             }
             prices
