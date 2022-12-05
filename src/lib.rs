@@ -189,6 +189,11 @@ pub mod BVC {
             self.good_data[&GoodKind::EUR].info.get_qty() - self.starting_eur / 10.0
         }
 
+        fn min_bid(&mut self) -> f32 {
+            //TODO change to something better
+            0
+        }
+
         //to notify other markets
         fn notify_markets(&mut self, event: Event) {
             for m in self.subscribers {
@@ -341,6 +346,76 @@ pub mod BVC {
             bid: f32,
             trader_name: String,
         ) -> Result<String, LockBuyError> {
+            let mut token: String;
+            //negative quantity
+            if quantity_to_buy < 0.0 {
+                //TODO log error
+                return Err(LockBuyError::NonPositiveQuantityToBuy {
+                    negative_quantity_to_buy: quantity_to_buy,
+                });
+            }
+
+            //non positive bid
+            if bid <= 0.0 {
+                //TODO log error
+                return Err(LockBuyError::NonPositiveBid { negative_bid: bid });
+            }
+
+            //max lock reached
+            if self.active_buy_locks == MAX_LOCK_BUY_NUM {
+                //TODO log error
+                return Err(LockBuyError::MaxAllowedLocksReached);
+            }
+
+            //not enough goods
+            if quantity_to_buy > self.good_data[&kind_to_buy].info.get_qty() {
+                //TODO log error
+                return Err(LockBuyError::InsufficientGoodQuantityAvailable {
+                    requested_good_kind: kind_to_buy,
+                    requested_good_quantity: quantity_to_buy,
+                    available_good_quantity: self.good_data[&kind_to_buy].info.get_qty(),
+                });
+            }
+
+            //bid too low
+            if bid < self.min_bid() {
+                //TODO log error
+                return Err(LockBuyError::BidTooLow {
+                    requested_good_kind: kind_to_buy,
+                    requested_good_quantity: quantity_to_buy,
+                    low_bid: bid,
+                    lowest_acceptable_bid: self.min_bid(),
+                });
+            }
+
+            token = BVCMarket::token(
+                //TODO log error
+                String::from_str("lock_buy").unwrap(),
+                trader_name,
+                self.time,
+            );
+
+            let good_splitted = self.good_data[&kind_to_buy]
+                .info
+                .split(quantity_to_buy)
+                .unwrap();
+            self.active_buy_locks += 1;
+            self.buy_locks.insert(
+                token,
+                LockBuyGood {
+                    locked_good: good_splitted,
+                    buy_price: bid,
+                    lock_time: self.time,
+                },
+            );
+
+            self.notify_markets(Event {
+                kind: EventKind::LockedBuy,
+                good_kind: kind_to_buy,
+                quantity: quantity_to_buy,
+                price: bid,
+            });
+            return Ok(token);
         }
 
         fn buy(&mut self, token: String, cash: &mut Good) -> Result<Good, BuyError> {}
