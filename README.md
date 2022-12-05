@@ -60,9 +60,9 @@ Applico le seguenti regole:
 
 - Usare un enum per ricordarmi se sono importer o exporter per ogni risorsa, se non sono nessuno dei due perchè non ho ancora deciso, mettiamo un valore flag.
 
-- Se ho meno del 30% degli EUR che avevo inizialmente, allora prendo la risorsa che convertita in euro vale di più, a patto che valga di più della quantità di euro già posseduta, la segno come exporter se posso, altrimenti ne cerco un altra con gli stessi vincoli( se non c'è fa lo stesso ) , e con probabilità 50% ne devolvo il 40% in EUR altrimenti non faccio niente.
+- Se ho meno del 30% degli EUR che avevo inizialmente, allora prendo la risorsa che convertita in euro vale di più, a patto che valga di più della quantità di euro già posseduta, la segno come exporter se posso, altrimenti ne cerco un altra con gli stessi vincoli( se non c'è fa lo stesso ) , e con probabilità 50% ne devolvo il ```min(10000eur,40% risorsa scelta)``` in EUR altrimenti non faccio niente.
 
-- Se ho una risorsa sofferente con meno del 30% della quantità iniziale, allora prendo la risorsa che convertita in euro vale di più, a patto che valga di più della quantità di euro che vale la risorsa sofferente ; segno la risorsa sofferente come importer e se la risorsa scelta per lo scambio non è l'euro, la segno come exporter se posso, altrimenti ne cerco un altra con gli stessi vincoli( se non c'è fa lo stesso ). Se la ho trovata con probabilità 60% ne devolvo il 30% in risorsa sofferente.
+- Se ho una risorsa sofferente con meno del 30% della quantità iniziale, allora prendo la risorsa che convertita in euro vale di più, a patto che valga di più della quantità di euro che vale la risorsa sofferente ; segno la risorsa sofferente come importer e se la risorsa scelta per lo scambio non è l'euro, la segno come exporter se posso, altrimenti ne cerco un altra con gli stessi vincoli( se non c'è fa lo stesso ). Se la ho trovata con probabilità 60% ne devolvo il ```min(10000eur,30% risorsa scelta)``` in risorsa sofferente.
 
 
 ## Reazione agli eventi ( TBD )
