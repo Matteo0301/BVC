@@ -5,13 +5,18 @@ pub mod BVC {
     use chrono::Utc;
     use std::{
         cell::RefCell,
-        collections::HashMap,
+        collections::{HashMap, HashSet},
+        fmt::Error,
         fs::{File, OpenOptions},
         io::prelude::*,
         rc::Rc,
+        str::FromStr,
     };
     use unitn_market_2022::{
-        event::{event::Event, notifiable::Notifiable},
+        event::{
+            event::{Event, EventKind},
+            notifiable::Notifiable,
+        },
         good::{self, consts::STARTING_CAPITAL, good::Good, good_kind::GoodKind},
         market::{
             good_label::GoodLabel, BuyError, LockBuyError, LockSellError, Market,
@@ -47,6 +52,8 @@ pub mod BVC {
         active_sell_locks: u8,
         subscribers: Vec<Box<dyn Notifiable>>,
         log_file: File,
+        starting_eur: f32,
+        expired_tokens: HashSet<String>,
     }
 
     enum TimeEnabler {
@@ -69,6 +76,7 @@ pub mod BVC {
     struct LockSellGood {
         locked_good: Good,
         receiving_good_qty: f32,
+        locked_kind: GoodKind,
         lock_time: u64,
     }
 
@@ -87,6 +95,7 @@ pub mod BVC {
                         .unwrap();
                     good.info.merge(lock.locked_good);
                     self.buy_locks.remove(&trader);
+                    self.expired_tokens.insert(trader);
                     self.active_buy_locks -= 1;
                     self.oldest_lock_buy_time = if self.buy_locks.len() == 0 {
                         Skip
@@ -109,7 +118,12 @@ pub mod BVC {
             //remove sell locks
             match self.oldest_lock_sell_time {
                 Use(oldest, trader) if oldest + MAX_LOCK_TIME < self.time => {
+                    let lock = self.sell_locks.get(&trader).unwrap();
+                    let good = self.good_data.get_mut(&GoodKind::EUR).unwrap();
+                    good.info.merge(lock.locked_good);
+
                     self.sell_locks.remove(&trader);
+                    self.expired_tokens.insert(trader);
                     self.active_sell_locks -= 1;
                     self.oldest_lock_sell_time = if self.sell_locks.len() == 0 {
                         Skip
@@ -171,11 +185,18 @@ pub mod BVC {
         //to update the prices according to market rules
         fn update_prices(&mut self) {}
 
+        fn max_offer(&mut self) -> f32 {
+            self.good_data[&GoodKind::EUR].info.get_qty() - self.starting_eur / 10.0
+        }
+
         //to notify other markets
         fn notify_markets(&mut self, event: Event) {
             for m in self.subscribers {
                 m.on_event(event)
             }
+            self.increment_time();
+            //TODO implement logging here
+            //self.write_on_log_file(String::new());
         }
 
         fn token(operation: String, trader: String, time: u64) -> String {
@@ -255,6 +276,8 @@ pub mod BVC {
                 sell_locks: HashMap::new(),
                 subscribers: Vec::new(),
                 log_file: file,
+                starting_eur: eur,
+                expired_tokens: HashSet::new(),
             };
             Rc::new(RefCell::new(m))
         }
@@ -332,6 +355,7 @@ pub mod BVC {
             let mut token: String;
             //negative quantity
             if quantity_to_sell < 0.0 {
+                //TODO log error
                 return Err(LockSellError::NonPositiveQuantityToSell {
                     negative_quantity_to_sell: quantity_to_sell,
                 });
@@ -339,6 +363,7 @@ pub mod BVC {
 
             //non positive offer
             if offer <= 0.0 {
+                //TODO log error
                 return Err(LockSellError::NonPositiveOffer {
                     negative_offer: offer,
                 });
@@ -346,12 +371,115 @@ pub mod BVC {
 
             //max lock reached
             if self.active_sell_locks == MAX_LOCK_SELL_NUM {
+                //TODO log error
                 return Err(LockSellError::MaxAllowedLocksReached);
             }
 
+            //not enough goods to sell
+            if quantity_to_sell > self.good_data[&kind_to_sell].info.get_qty() {
+                //TODO log error
+                return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable {
+                    offered_good_kind: kind_to_sell,
+                    offered_good_quantity: quantity_to_sell,
+                    available_good_quantity: self.good_data[&kind_to_sell].info.get_qty(),
+                });
+            }
+
+            //offer too high
+            if offer > self.max_offer() {
+                //TODO log error
+                return Err(LockSellError::OfferTooHigh {
+                    offered_good_kind: kind_to_sell,
+                    offered_good_quantity: quantity_to_sell,
+                    high_offer: offer,
+                    highest_acceptable_offer: self.max_offer(),
+                });
+            }
+
+            token = BVCMarket::token(
+                //TODO log error
+                String::from_str("lock_sell").unwrap(),
+                trader_name,
+                self.time,
+            );
+
+            let eur_splitted = self.good_data[&GoodKind::EUR]
+                .info
+                .split(quantity_to_sell)
+                .unwrap();
+            self.active_sell_locks += 1;
+            self.sell_locks.insert(
+                token,
+                LockSellGood {
+                    locked_good: eur_splitted,
+                    receiving_good_qty: quantity_to_sell,
+                    lock_time: self.time,
+                    locked_kind: kind_to_sell,
+                },
+            );
+
+            self.notify_markets(Event {
+                kind: EventKind::LockedSell,
+                good_kind: kind_to_sell,
+                quantity: quantity_to_sell,
+                price: offer,
+            });
             return Ok(token);
         }
 
-        fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {}
+        fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
+            let res = Good {
+                kind: GoodKind::EUR,
+                quantity: 0.0,
+            };
+
+            if !self.sell_locks.contains_key(&token) {
+                //expired token
+                if self.expired_tokens.contains(&token) {
+                    //TODO log error
+                    return Err(SellError::ExpiredToken {
+                        expired_token: token,
+                    });
+                } else {
+                    //invalid token
+                    //TODO log error
+                    return Err(SellError::UnrecognizedToken {
+                        unrecognized_token: token,
+                    });
+                }
+            }
+
+            //king of goods not matching
+            if self.sell_locks[&token].locked_kind != good.get_kind() {
+                //TODO log error
+                return Err(SellError::WrongGoodKind {
+                    wrong_good_kind: good.get_kind(),
+                    pre_agreed_kind: self.sell_locks[&token].locked_kind,
+                });
+            }
+
+            //quantity of goods not matching
+            if self.sell_locks[&token].receiving_good_qty != good.get_qty() {
+                //TODO log error
+                return Err(SellError::InsufficientGoodQuantity {
+                    contained_quantity: good.get_qty(),
+                    pre_agreed_quantity: self.sell_locks[&token].receiving_good_qty,
+                });
+            }
+
+            let received = self.sell_locks[&token].locked_good.get_qty();
+            res.merge(self.sell_locks[&token].locked_good);
+            self.sell_locks.remove(&token);
+            self.good_data[&good.get_kind()].info.merge(*good);
+
+            self.notify_markets(Event {
+                kind: EventKind::Sold,
+                good_kind: good.get_kind(),
+                quantity: good.get_qty(),
+                price: received,
+            });
+
+            return Ok(res);
+        }
     }
 }
