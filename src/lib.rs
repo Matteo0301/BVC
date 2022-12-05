@@ -15,8 +15,8 @@ pub mod BVC {
 
     const NAME: &'static str = "BVC";
     const MAX_LOCK_TIME: u64 = 12;
-    const MAX_LOCK_BUY_NUM: i32 = 4;
-    const MAX_LOCK_SELL_NUM: i32 = 4;
+    const MAX_LOCK_BUY_NUM: u8 = 4;
+    const MAX_LOCK_SELL_NUM: u8 = 4;
 
     pub struct BVCMarket {
         /* eur: Good,
@@ -295,14 +295,27 @@ pub mod BVC {
             offer: f32,
             trader_name: String,
         ) -> Result<String, LockSellError> {
-            let mut result: Good;
-            if quantity_to_sell < 0 {
+            let mut token: String;
+            //negative quantity
+            if quantity_to_sell < 0.0 {
                 return Err(LockSellError::NonPositiveQuantityToSell {
                     negative_quantity_to_sell: quantity_to_sell,
                 });
             }
 
-            return Ok(result);
+            //non positive offer
+            if offer <= 0.0 {
+                return Err(LockSellError::NonPositiveOffer {
+                    negative_offer: offer,
+                });
+            }
+
+            //max lock reached
+            if self.active_sell_locks == MAX_LOCK_SELL_NUM {
+                return Err(LockSellError::MaxAllowedLocksReached);
+            }
+
+            return Ok(token);
         }
 
         fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {}
