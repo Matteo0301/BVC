@@ -63,7 +63,7 @@ pub mod BVC {
     struct LockSellGood{
         locked_quantity : f32,
         sell_price : f32,
-        lock_time : i32
+        lock_time : u64,
     }
 
     impl BVCMarket {
