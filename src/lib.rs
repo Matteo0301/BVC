@@ -68,7 +68,7 @@ pub mod BVC {
 
     struct LockSellGood {
         locked_good: Good,
-        receiving_qty: f32,
+        receiving_good_qty: f32,
         lock_time: u64,
     }
 
