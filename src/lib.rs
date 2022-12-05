@@ -191,7 +191,7 @@ pub mod BVC {
 
         fn min_bid(&mut self) -> f32 {
             //TODO change to something better
-            0
+            0.0
         }
 
         //to notify other markets
@@ -213,7 +213,12 @@ pub mod BVC {
         fn add_subscriber(&mut self, subscriber: Box<dyn Notifiable>) {
             self.subscribers.push(subscriber);
         }
-        fn on_event(&mut self, event: Event) {}
+        fn on_event(&mut self, event: Event) {
+            match event.kind {
+                EventKind::Wait => self.increment_time(),
+                other => ();
+            }
+        }
     }
 
     impl Market for BVCMarket {
@@ -397,11 +402,12 @@ pub mod BVC {
 
             let good_splitted = self.good_data[&kind_to_buy]
                 .info
+                .clone()
                 .split(quantity_to_buy)
                 .unwrap();
             self.active_buy_locks += 1;
             self.buy_locks.insert(
-                token,
+                token.clone(),
                 LockBuyGood {
                     locked_good: good_splitted,
                     buy_price: bid,
@@ -418,7 +424,56 @@ pub mod BVC {
             return Ok(token);
         }
 
-        fn buy(&mut self, token: String, cash: &mut Good) -> Result<Good, BuyError> {}
+        fn buy(&mut self, token: String, cash: &mut Good) -> Result<Good, BuyError> {
+            if !self.buy_locks.contains_key(&token) {
+                //expired token
+                if self.expired_tokens.contains(&token) {
+                    //TODO log error
+                    return Err(BuyError::ExpiredToken {
+                        expired_token: token,
+                    });
+                } else {
+                    //invalid token
+                    //TODO log error
+                    return Err(BuyError::UnrecognizedToken {
+                        unrecognized_token: token,
+                    });
+                }
+            }
+
+            //invalid cash kind
+            if cash.get_kind() != GoodKind::EUR {
+                //TODO log error
+                return Err(BuyError::GoodKindNotDefault {
+                    non_default_good_kind: cash.get_kind(),
+                });
+            }
+
+            //insufficient good quantity
+            if self.buy_locks[&token].buy_price > cash.get_qty() {
+                //TODO log error
+                return Err(BuyError::InsufficientGoodQuantity {
+                    contained_quantity: cash.get_qty(),
+                    pre_agreed_quantity: self.buy_locks[&token].buy_price,
+                });
+            }
+
+            let received = self.buy_locks[&token].buy_price;
+            let res = self.buy_locks[&token].locked_good.clone();
+            self.buy_locks.remove(&token);
+            self.active_buy_locks -= 1;
+            let mut eur = self.good_data[&GoodKind::EUR].info.clone();
+            eur.merge(cash.split(received).unwrap());
+
+            self.notify_markets(Event {
+                kind: EventKind::Bought,
+                good_kind: res.get_kind(),
+                quantity: res.get_qty(),
+                price: received,
+            });
+
+            return Ok(res);
+        }
 
         fn lock_sell(
             &mut self,
@@ -480,11 +535,12 @@ pub mod BVC {
 
             let eur_splitted = self.good_data[&GoodKind::EUR]
                 .info
+                .clone()
                 .split(quantity_to_sell)
                 .unwrap();
             self.active_sell_locks += 1;
             self.sell_locks.insert(
-                token,
+                token.clone(),
                 LockSellGood {
                     locked_good: eur_splitted,
                     receiving_good_qty: quantity_to_sell,
@@ -503,7 +559,7 @@ pub mod BVC {
         }
 
         fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
-            let res = Good {
+            let mut res = Good {
                 kind: GoodKind::EUR,
                 quantity: 0.0,
             };
@@ -534,7 +590,7 @@ pub mod BVC {
             }
 
             //quantity of goods not matching
-            if self.sell_locks[&token].receiving_good_qty != good.get_qty() {
+            if self.sell_locks[&token].receiving_good_qty > good.get_qty() {
                 //TODO log error
                 return Err(SellError::InsufficientGoodQuantity {
                     contained_quantity: good.get_qty(),
@@ -542,16 +598,19 @@ pub mod BVC {
                 });
             }
 
-            let received = self.sell_locks[&token].locked_good.get_qty();
-            res.merge(self.sell_locks[&token].locked_good);
+            let price = self.sell_locks[&token].locked_good.get_qty();
+            res.merge(self.sell_locks[&token].locked_good.clone());
             self.sell_locks.remove(&token);
-            self.good_data[&good.get_kind()].info.merge(*good);
+            self.active_sell_locks -= 1;
+            let mut tmp = self.good_data[&good.get_kind()].info.clone();
+            let goodTmp = Good { ..*good };
+            tmp.merge(goodTmp);
 
             self.notify_markets(Event {
                 kind: EventKind::Sold,
                 good_kind: good.get_kind(),
                 quantity: good.get_qty(),
-                price: received,
+                price: price,
             });
 
             return Ok(res);
