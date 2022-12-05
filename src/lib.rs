@@ -1,5 +1,15 @@
+#[macro_use]
+mod log_formatter;
+
 pub mod BVC {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
+    use chrono::Utc;
+    use std::{
+        cell::RefCell,
+        collections::HashMap,
+        fs::{File, OpenOptions},
+        io::prelude::*,
+        rc::Rc,
+    };
     use unitn_market_2022::{
         event::{event::Event, notifiable::Notifiable},
         good::{self, consts::STARTING_CAPITAL, good::Good, good_kind::GoodKind},
@@ -17,6 +27,10 @@ pub mod BVC {
     const MAX_LOCK_TIME: u64 = 12;
     const MAX_LOCK_BUY_NUM: u8 = 4;
     const MAX_LOCK_SELL_NUM: u8 = 4;
+    const LOWER_EUR_INIT_BOUND_PERCENTAGE: f32 = 0.3;
+    const UPPER_EUR_INIT_BOUND_PERCENTAGE: f32 = 0.4;
+    const LOWER_GOODS_INIT_BOUND_PERCENTAGE: f32 = 0.35;
+    const UPPER_GOODS_INIT_BOUND_PERCENTAGE: f32 = 0.45;
 
     pub struct BVCMarket {
         /* eur: Good,
@@ -32,6 +46,7 @@ pub mod BVC {
         active_buy_locks: u8,
         active_sell_locks: u8,
         subscribers: Vec<Box<dyn Notifiable>>,
+        log_file: File,
     }
 
     enum TimeEnabler {
@@ -58,6 +73,9 @@ pub mod BVC {
     }
 
     impl BVCMarket {
+        fn write_on_log_file(&mut self, log_str: String) {
+            write!(self.log_file, "{}", log_str);
+        }
         fn update_locks(&mut self) {
             //remove buy locks
             match self.oldest_lock_buy_time {
@@ -180,14 +198,22 @@ pub mod BVC {
             let mut max = STARTING_CAPITAL;
             let (mut eur, mut yen, mut usd, mut yuan): (f32, f32, f32, f32) = (0.0, 0.0, 0.0, 0.0);
             let mut rng = thread_rng();
-            eur = rng.gen_range(0.0, max);
+            eur = rng.gen_range(
+                max * LOWER_EUR_INIT_BOUND_PERCENTAGE,
+                max * UPPER_EUR_INIT_BOUND_PERCENTAGE,
+            );
             max -= eur;
-            yen = rng.gen_range(0.0, max);
+            yen = rng.gen_range(
+                max * LOWER_GOODS_INIT_BOUND_PERCENTAGE,
+                max * UPPER_GOODS_INIT_BOUND_PERCENTAGE,
+            );
             max -= yen;
-            usd = rng.gen_range(0.0, max);
+            usd = rng.gen_range(
+                max * LOWER_GOODS_INIT_BOUND_PERCENTAGE,
+                max * UPPER_GOODS_INIT_BOUND_PERCENTAGE,
+            );
             max -= usd;
-            yuan = rng.gen_range(0.0, max);
-            max -= yuan;
+            yuan = max;
             Self::new_with_quantities(eur, yen, usd, yuan)
         }
 
@@ -195,6 +221,13 @@ pub mod BVC {
         where
             Self: Sized,
         {
+            //Initialize prices tbd
+            //log_market_init!(..);
+            let mut file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(format!("log_{}.txt", NAME))
+                .expect("Unable to create log file !");
             let m: BVCMarket = BVCMarket {
                 /* eur: Good {
                     kind: GoodKind::EUR,
@@ -221,6 +254,7 @@ pub mod BVC {
                 buy_locks: HashMap::new(),
                 sell_locks: HashMap::new(),
                 subscribers: Vec::new(),
+                log_file: file,
             };
             Rc::new(RefCell::new(m))
         }
