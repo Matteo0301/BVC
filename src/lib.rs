@@ -60,59 +60,90 @@ pub mod BVC {
         fn update_locks(&mut self) {
             //remove buy locks
             match self.oldest_lock_buy_time {
-                Use(oldest, trader) => {
-                    if (oldest + MAX_LOCK_TIME < self.time) {
-                        let lock = self.buy_locks.get(&trader).unwrap();
-                        let good = self
-                            .good_data
-                            .get_mut(&lock.locked_good.get_kind())
-                            .unwrap();
-                        good.info.merge(lock.locked_good);
-                        self.buy_locks.remove(&trader);
-                        self.oldest_lock_buy_time = if (self.buy_locks.len() == 0) {
-                            Skip
-                        } else {
-                            let mut oldest = Use(self.time, String::new());
-                            for (trader, good) in self.buy_locks {
-                                oldest = match oldest {
-                                    Use(time, _) if good.lock_time < time => {
-                                        Use(good.lock_time, trader)
-                                    }
-                                    other => oldest,
+                Use(oldest, trader) if oldest + MAX_LOCK_TIME < self.time => {
+                    let lock = self.buy_locks.get(&trader).unwrap();
+                    let good = self
+                        .good_data
+                        .get_mut(&lock.locked_good.get_kind())
+                        .unwrap();
+                    good.info.merge(lock.locked_good);
+                    self.buy_locks.remove(&trader);
+                    self.active_buy_locks -= 1;
+                    self.oldest_lock_buy_time = if self.buy_locks.len() == 0 {
+                        Skip
+                    } else {
+                        let mut oldest = Use(self.time, String::new());
+                        for (trader, good) in self.buy_locks {
+                            oldest = match oldest {
+                                Use(time, _) if good.lock_time < time => {
+                                    Use(good.lock_time, trader)
                                 }
+                                other => oldest,
                             }
-                            oldest
                         }
+                        oldest
                     }
                 }
-                Skip => (),
+                other => (),
             }
 
             //remove sell locks
             match self.oldest_lock_sell_time {
-                Use(oldest, trader) => {
-                    if (oldest + MAX_LOCK_TIME < self.time) {
-                        self.sell_locks.remove(&trader);
-                        self.oldest_lock_sell_time = if (self.sell_locks.len() == 0) {
-                            Skip
-                        } else {
-                            let mut oldest = Use(self.time, String::new());
-                            for (trader, good) in self.sell_locks {
-                                oldest = match oldest {
-                                    Use(time, _) if good.lock_time < time => {
-                                        Use(good.lock_time, trader)
-                                    }
-                                    other => oldest,
+                Use(oldest, trader) if oldest + MAX_LOCK_TIME < self.time => {
+                    self.sell_locks.remove(&trader);
+                    self.active_sell_locks -= 1;
+                    self.oldest_lock_sell_time = if self.sell_locks.len() == 0 {
+                        Skip
+                    } else {
+                        let mut oldest = Use(self.time, String::new());
+                        for (trader, good) in self.sell_locks {
+                            oldest = match oldest {
+                                Use(time, _) if good.lock_time < time => {
+                                    Use(good.lock_time, trader)
                                 }
+                                other => oldest,
                             }
-                            oldest
                         }
+                        oldest
                     }
                 }
-                Skip => (),
+                other => (),
             }
 
             return;
+        }
+
+        fn increment_time(&mut self) {
+            let tmp = self.time + 1;
+            if tmp < self.time {
+                let oldest_lock_buy = match self.oldest_lock_buy_time {
+                    Skip => std::u64::MAX,
+                    Use(time, _) => time,
+                };
+                let oldest_lock_sell = match self.oldest_lock_sell_time {
+                    Skip => std::u64::MAX,
+                    Use(time, _) => time,
+                };
+                let oldest = std::cmp::min(oldest_lock_buy, oldest_lock_sell);
+                if oldest != std::u64::MAX {
+                    self.oldest_lock_buy_time = match self.oldest_lock_buy_time {
+                        Use(time, trader) => Use(time - oldest, trader),
+                        Skip => Skip,
+                    };
+                    self.oldest_lock_sell_time = match self.oldest_lock_sell_time {
+                        Use(time, trader) => Use(time - oldest, trader),
+                        Skip => Skip,
+                    };
+                    for (trader, good) in self.buy_locks {
+                        good.lock_time -= oldest;
+                    }
+                    for (trader, good) in self.sell_locks {
+                        good.lock_time -= oldest;
+                    }
+                    self.time = self.time - oldest + 1;
+                }
+            }
+            self.update_locks();
         }
     }
 
