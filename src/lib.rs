@@ -4,7 +4,8 @@ pub mod BVC {
         event::{event::Event, notifiable::Notifiable},
         good::{self, consts::STARTING_CAPITAL, good::Good, good_kind::GoodKind},
         market::{
-            good_label::GoodLabel, BuyError, LockBuyError, Market, MarketGetterError, SellError,
+            good_label::GoodLabel, BuyError, LockBuyError, LockSellError, Market,
+            MarketGetterError, SellError,
         },
     };
     use TimeEnabler::{Skip, Use};
@@ -114,8 +115,8 @@ pub mod BVC {
         }
 
         fn increment_time(&mut self) {
-            let tmp = self.time + 1;
-            if tmp < self.time {
+            self.time += 1;
+            if self.time == std::u64::MAX {
                 let oldest_lock_buy = match self.oldest_lock_buy_time {
                     Skip => std::u64::MAX,
                     Use(time, _) => time,
@@ -144,6 +145,23 @@ pub mod BVC {
                 }
             }
             self.update_locks();
+        }
+
+        //to implement fluctuation of the goods
+        fn fluctuate_quantity(&mut self) {}
+
+        //to update the prices according to market rules
+        fn update_prices(&mut self) {}
+
+        //to notify other markets
+        fn notify_markets(&mut self, event: Event) {
+            for m in self.subscribers {
+                m.on_event(event)
+            }
+        }
+
+        fn token(operation: String, trader: String, time: u64) -> String {
+            format!("{}-{}-{}", operation, trader, time)
         }
     }
 
@@ -276,7 +294,15 @@ pub mod BVC {
             quantity_to_sell: f32,
             offer: f32,
             trader_name: String,
-        ) -> Result<String, LockBuyError> {
+        ) -> Result<String, LockSellError> {
+            let mut result: Good;
+            if quantity_to_sell < 0 {
+                return Err(LockSellError::NonPositiveQuantityToSell {
+                    negative_quantity_to_sell: quantity_to_sell,
+                });
+            }
+
+            return Ok(result);
         }
 
         fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {}
