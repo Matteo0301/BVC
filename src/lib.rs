@@ -13,7 +13,7 @@ pub mod BVC {
     use rand::Rng;
 
     const NAME : &'static str = "BVC";
-    const MAX_LOCK_TIME : i32 = 5;
+    const MAX_LOCK_TIME : i32 = 12;
     const MAX_LOCK_BUY_NUM : i32 = 4;
     const MAX_LOCK_SELL_NUM : i32 = 4;
 
@@ -22,17 +22,19 @@ pub mod BVC {
         usd: Good,
         yen: Good,
         yuan: Good, */
-        time : u32, // needs to be reset before reaching MAX_INT and change transaction times accordingly
+        time : u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
         oldest_lock_buy_time : TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
         oldest_lock_sell_time : TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
         good_data : HashMap<GoodKind, GoodInfo>,
         buy_locks : HashMap<String,LockBuyGood>,
         sell_locks : HashMap<String,LockSellGood>,
+        active_buy_locks : u8,
+        active_sell_locks : u8,
         subscribers : Vec<Box<dyn Notifiable>>,
     }
 
     enum TimeEnabler {
-        Use(u32),
+        Use(u64),
         Skip,
     }
 
@@ -104,6 +106,8 @@ pub mod BVC {
                 time : 0,
                 oldest_lock_buy_time : Skip,
                 oldest_lock_sell_time : Skip,
+                active_buy_locks : 0,
+                active_sell_locks : 0,
                 good_data : HashMap::new(), // Implement starting prices here
                 buy_locks : HashMap::new(),
                 sell_locks : HashMap::new(),
@@ -111,6 +115,7 @@ pub mod BVC {
             };
             Rc::new(RefCell::new(m))
         }
+        
         fn new_file(path: &str) -> Rc<RefCell<dyn Market>>
         where
             Self: Sized,
