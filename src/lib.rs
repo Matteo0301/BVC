@@ -60,12 +60,6 @@ pub mod BVC {
         lock_time: u64,
     }
 
-    struct LockBuyGood{
-        locked_good : Good,
-        buy_price : f32,
-        lock_time : i32,
-    }
-
     struct LockSellGood{
         locked_quantity : f32,
         sell_price : f32,
