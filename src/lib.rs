@@ -233,13 +233,26 @@ pub mod BVC {
             self.update_kind_price(GoodKind::YUAN, good::consts::DEFAULT_EUR_YUAN_EXCHANGE_RATE);
         }
 
-        fn max_offer(&mut self) -> f32 {
+        fn max_offer(&mut self, kind: &GoodKind, qty: f32) -> f32 {
+            let price = self.get_sell_price(*kind, qty).unwrap();
+            let max_resource = self.starting_prices[&GoodKind::EUR] * REFUSE_LOCK_SELL;
             self.good_data[&GoodKind::EUR].info.get_qty()
-                - self.starting_prices[&GoodKind::EUR] * REFUSE_LOCK_SELL
+                - (if price < max_resource {
+                    price
+                } else {
+                    max_resource
+                })
         }
 
-        fn min_bid(&mut self, kind: &GoodKind) -> f32 {
-            self.good_data[kind].info.get_qty() - self.starting_prices[kind] * REFUSE_LOCK_SELL
+        fn min_bid(&mut self, kind: &GoodKind, qty: f32) -> f32 {
+            let price = self.get_buy_price(*kind, qty).unwrap();
+            let min_resource = self.starting_prices[kind] * REFUSE_LOCK_SELL;
+            self.good_data[kind].info.get_qty()
+                - (if price > min_resource {
+                    price
+                } else {
+                    min_resource
+                })
         }
 
         //to notify other markets
@@ -437,7 +450,7 @@ pub mod BVC {
             // Remember if the kind is EUROS we must change it 1:1
             match kind {
                 GoodKind::EUR => Ok(quantity),
-                _ => Ok(self.good_data[&kind].sell_exchange_rate * quantity),
+                _ => Ok(1.0 / self.good_data[&kind].sell_exchange_rate * quantity),
             }
         }
 
@@ -493,13 +506,13 @@ pub mod BVC {
             }
 
             //bid too low
-            if bid < self.min_bid(&kind_to_buy) {
+            if bid < self.min_bid(&kind_to_buy, quantity_to_buy) {
                 //TODO log error
                 return Err(LockBuyError::BidTooLow {
                     requested_good_kind: kind_to_buy,
                     requested_good_quantity: quantity_to_buy,
                     low_bid: bid,
-                    lowest_acceptable_bid: self.min_bid(&kind_to_buy),
+                    lowest_acceptable_bid: self.min_bid(&kind_to_buy, quantity_to_buy),
                 });
             }
 
@@ -632,13 +645,13 @@ pub mod BVC {
             }
 
             //offer too high
-            if offer > self.max_offer() {
+            if offer > self.max_offer(&kind_to_sell, quantity_to_sell) {
                 //TODO log error
                 return Err(LockSellError::OfferTooHigh {
                     offered_good_kind: kind_to_sell,
                     offered_good_quantity: quantity_to_sell,
                     high_offer: offer,
-                    highest_acceptable_offer: self.max_offer(),
+                    highest_acceptable_offer: self.max_offer(&kind_to_sell, quantity_to_sell),
                 });
             }
 
