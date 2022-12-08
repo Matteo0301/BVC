@@ -31,13 +31,13 @@ The following rules are applied:
 
 - The market refuses **any** `lock sell` that would leave it with less than `25%` of the initial `eur` quantity.
 
-- Define a value `mean` := for each good that is not EUR, convert it to EUR ( using default exchange rates ), sum them all together, then divide the obtained value by 3 ( which is the number of goods except EUR).
+- Define a value `mean` := for each good that is not EUR, convert it to EUR ( using default exchange rates ), sum them all together, then divide the obtained value by 3 ( which is the number of goods except EUR).  
 
-$$mean = \frac{\sum_{i=0}^{2}to\_eur(goods_i)}{3}$$
+$$mean = \frac{\sum_{i=0}^{2}toeur(goods_i)}{3}$$
 
 - If a good has its quantity below the `mean` , (buy) price will fluctuate incrementally using this formula:
 
-$$ price = \left(\left(\frac{mean-good\_qty}{mean\cdot 0.75}\cdot 0.1\right)+1\right)\cdot default\_price$$
+$$ price = \left(\left(\frac{mean-goodqty}{mean\cdot 0.75}\cdot 0.1\right)+1\right)\cdot defaultprice$$
 
 > This means that if a good it's at its minimum quantity, the trader will pay it 10% more than the default exchange rate.
 
@@ -63,11 +63,11 @@ The logic is trying to equalize good quantities, but not always, to avoid confli
 
 - If i have less than 30% of the initial quantity of a given good, it is `suffering`. To refill it, the market will take a good such that: 
 
-    $$chosen\_good = \max(to\_eur(good)) \ \forall good : (to\_eur(good) > eur\_good\_quantity \wedge is\_not\_marked\_as\_exported(good))$$ 
+    $$chosengood = \max(toeur(good)) \ \forall good : (toeur(good) > eurgoodquantity \wedge isnotmarkedasexported(good))$$ 
 
     Then mark it as an exporter and with a `50%` probability take a part of it which is:
 
-    $$part\_to\_be\_converted = \min(10000,0.5*(to\_eur(chosen\_good)-eur\_quantity))$$
+    $$convertedpart = \min(10000,0.5*(toeur(chosengood)-eurquantity))$$
 
     and then sum it to the `suffering` good.
 
