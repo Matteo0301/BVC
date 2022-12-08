@@ -34,10 +34,12 @@ The following rules are applied:
 - Define a value `mean` := for each good that is not EUR, convert it to EUR ( using default exchange rates ), sum them all together, then divide the obtained value by 3 ( which is the number of goods except EUR).  
 
 $$mean = \frac{\sum_{i=0}^{2}toeur(goods_i)}{3}$$
+<br>
 
 - If a good has its quantity below the `mean` , (buy) price will fluctuate incrementally using this formula:
 
 $$ price = \left(\left(\frac{mean-goodqty}{mean\cdot 0.75}\cdot 0.1\right)+1\right)\cdot defaultprice$$
+<br>
 
 > This means that if a good it's at its minimum quantity, the trader will pay it 10% more than the default exchange rate.
 
@@ -63,11 +65,13 @@ The logic is trying to equalize good quantities, but not always, to avoid confli
 
 - If i have less than 30% of the initial quantity of a given good, it is `suffering`. To refill it, the market will take a good such that: 
 
-    $$chosengood = \max(toeur(good)) \ \forall good : (toeur(good) > eurgoodquantity \wedge isnotmarkedasexported(good))$$ 
+    $$chosengood = \max(toeur(good)) \ \forall good : (toeur(good) > eurgoodquantity \wedge isnotmarkedasexported(good))$$
+    <br>
 
     Then mark it as an exporter and with a `50%` probability take a part of it which is:
 
     $$convertedpart = \min(10000,0.5*(toeur(chosengood)-eurquantity))$$
+    <br>
 
     and then sum it to the `suffering` good.
 
