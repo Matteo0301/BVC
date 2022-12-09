@@ -1,7 +1,10 @@
+#![allow(non_snake_case)]
+
 #[macro_use]
 mod log_formatter;
 
 pub mod BVC {
+    use core::panic;
     //use chrono::Utc;
     use std::{
         cell::RefCell,
@@ -17,7 +20,7 @@ pub mod BVC {
             event::{Event, EventKind},
             notifiable::Notifiable,
         },
-        good::{self, consts::STARTING_CAPITAL, good::Good, good_kind::GoodKind},
+        good::{self, consts::{STARTING_CAPITAL, DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE}, good::Good, good_kind::GoodKind},
         market::{
             good_label::GoodLabel, BuyError, LockBuyError, LockSellError, Market,
             MarketGetterError, SellError,
@@ -25,28 +28,26 @@ pub mod BVC {
     };
     use TimeEnabler::{Skip, Use};
 
-    use rand::thread_rng;
+    use rand::{thread_rng, seq::SliceRandom};
     use rand::Rng;
 
     const NAME: &'static str = "BVC";
     const MAX_LOCK_TIME: u64 = 12;
     const MAX_LOCK_BUY_NUM: u8 = 4;
     const MAX_LOCK_SELL_NUM: u8 = 4;
-    const LOWER_EUR_INIT_BOUND_PERCENTAGE: f32 = 0.3;
-    const UPPER_EUR_INIT_BOUND_PERCENTAGE: f32 = 0.4;
-    const LOWER_GOODS_INIT_BOUND_PERCENTAGE: f32 = 0.35;
-    const UPPER_GOODS_INIT_BOUND_PERCENTAGE: f32 = 0.45;
+    const LOWER_EUR_INIT_BOUND_PERCENTAGE: f32 = 0.25;
+    const UPPER_EUR_INIT_BOUND_PERCENTAGE: f32 = 0.35;
+    const LOWER_SECOND_GOOD_INIT_BOUND_PERCENTAGE: f32 = 0.30;
+    const UPPER_SECOND_GOOD_INIT_BOUND_PERCENTAGE: f32 = 0.36;
+    const LOWER_THIRD_GOOD_INIT_BOUND_PERCENTAGE: f32 = 0.45;
+    const UPPER_THIRD_GOOD_INIT_BOUND_PERCENTAGE: f32 = 0.55;
 
     //constants for price changes
     const REFUSE_LOCK_BUY: f32 = 0.25;
     const REFUSE_LOCK_SELL: f32 = 0.20;
     const BUY_SELL_PERCENT: f32 = 1.1;
-
+    
     pub struct BVCMarket {
-        /* eur: Good,
-        usd: Good,
-        yen: Good,
-        yuan: Good, */
         time: u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
         oldest_lock_buy_time: TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
         oldest_lock_sell_time: TimeEnabler, //used to avoid iterating the map when useless, set to Skip to ignore
@@ -86,9 +87,14 @@ pub mod BVC {
     }
 
     impl BVCMarket {
+
         fn write_on_log_file(&mut self, log_str: String) {
-            write!(self.log_file, "{}", log_str);
+            match write!(self.log_file, "{}", log_str) {
+                Ok(u) => u,
+                Err(e) => panic!("{}",e)
+            }
         }
+
         fn update_locks(&mut self) {
             //remove buy locks
             match &self.oldest_lock_buy_time {
@@ -289,24 +295,56 @@ pub mod BVC {
         {
             let mut max = STARTING_CAPITAL;
             let (mut eur, mut yen, mut usd, mut yuan): (f32, f32, f32, f32) = (0.0, 0.0, 0.0, 0.0);
+            let mut good_kinds = vec![GoodKind::USD,GoodKind::YUAN,GoodKind::YEN];
             let mut rng = thread_rng();
+            
             eur = rng.gen_range(
                 max * LOWER_EUR_INIT_BOUND_PERCENTAGE,
                 max * UPPER_EUR_INIT_BOUND_PERCENTAGE,
             );
             max -= eur;
-            yen = rng.gen_range(
-                max * LOWER_GOODS_INIT_BOUND_PERCENTAGE,
-                max * UPPER_GOODS_INIT_BOUND_PERCENTAGE,
-            );
-            max -= yen;
-            usd = rng.gen_range(
-                max * LOWER_GOODS_INIT_BOUND_PERCENTAGE,
-                max * UPPER_GOODS_INIT_BOUND_PERCENTAGE,
-            );
-            max -= usd;
-            yuan = max;
-            Self::new_with_quantities(eur, yen, usd, yuan)
+
+            good_kinds.shuffle(&mut rng);
+            match good_kinds[0] {
+                GoodKind::USD => {usd = rng.gen_range(
+                    max * LOWER_SECOND_GOOD_INIT_BOUND_PERCENTAGE,
+                    max * UPPER_SECOND_GOOD_INIT_BOUND_PERCENTAGE,
+                ); max -= usd },
+                GoodKind::YEN => {yen = rng.gen_range(
+                    max * LOWER_SECOND_GOOD_INIT_BOUND_PERCENTAGE,
+                    max * UPPER_SECOND_GOOD_INIT_BOUND_PERCENTAGE,
+                ); max -= yen},
+                GoodKind::YUAN => {yuan = rng.gen_range(
+                    max * LOWER_SECOND_GOOD_INIT_BOUND_PERCENTAGE,
+                    max * UPPER_SECOND_GOOD_INIT_BOUND_PERCENTAGE,
+                ); max -= yuan},
+                GoodKind::EUR => panic!("Matched EUR which has been already initialized !")
+            }
+            
+            match good_kinds[1] {
+                GoodKind::USD => {usd = rng.gen_range(
+                    max * LOWER_THIRD_GOOD_INIT_BOUND_PERCENTAGE,
+                    max * UPPER_THIRD_GOOD_INIT_BOUND_PERCENTAGE,
+                ); max -= usd },
+                GoodKind::YEN => {yen = rng.gen_range(
+                    max * LOWER_THIRD_GOOD_INIT_BOUND_PERCENTAGE,
+                    max * UPPER_THIRD_GOOD_INIT_BOUND_PERCENTAGE,
+                ); max -= yen},
+                GoodKind::YUAN => {yuan = rng.gen_range(
+                    max * LOWER_THIRD_GOOD_INIT_BOUND_PERCENTAGE,
+                    max * UPPER_THIRD_GOOD_INIT_BOUND_PERCENTAGE,
+                ); max -= yuan},
+                GoodKind::EUR => panic!("Matched EUR which has been already initialized !")
+            }
+
+            match good_kinds[2] {
+                GoodKind::USD => usd = max,
+                GoodKind::YEN => yen = max,
+                GoodKind::YUAN => yuan = max,
+                GoodKind::EUR => panic!("Matched EUR which has been already initialized !")
+            }
+
+            Self::new_with_quantities(eur, yen*DEFAULT_EUR_YEN_EXCHANGE_RATE, usd*DEFAULT_EUR_USD_EXCHANGE_RATE, yuan*DEFAULT_EUR_YUAN_EXCHANGE_RATE)
         }
 
         fn new_with_quantities(eur: f32, yen: f32, usd: f32, yuan: f32) -> Rc<RefCell<dyn Market>>
@@ -320,23 +358,8 @@ pub mod BVC {
                 .create(true)
                 .open(format!("log_{}.txt", NAME))
                 .expect("Unable to create log file !");
+
             let mut m: BVCMarket = BVCMarket {
-                /* eur: Good {
-                    kind: GoodKind::EUR,
-                    quantity: eur,
-                },
-                yen: Good {
-                    kind: GoodKind::YEN,
-                    quantity: yen,
-                },
-                usd: Good {
-                    kind: GoodKind::USD,
-                    quantity: usd,
-                },
-                yuan: Good {
-                    kind: GoodKind::YUAN,
-                    quantity: yuan,
-                }, */
                 time: 0,
                 oldest_lock_buy_time: Skip,
                 oldest_lock_sell_time: Skip,
