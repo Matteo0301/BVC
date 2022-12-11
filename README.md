@@ -12,9 +12,9 @@ Here we will store the library files of our Market.
 
 ## Initial goods allocation:
 
-- `eur` := random percentage in range `(25%,35%)` of `STARTING_CAPITAL`.
-- `second_good` := random percentage in range `(30%,36%)` of `(STARTING_CAPITAL - eur)`.
-- `third_good` := random percentage in range `(45%,55%)` of `(STARTING_CAPITAL - eur - to_eur(second_good) )`.
+- `eur` := random percentage in range `[25%,35%)` of `STARTING_CAPITAL`.
+- `second_good` := random percentage in range `[30%,36%)` of `(STARTING_CAPITAL - eur)`.
+- `third_good` := random percentage in range `[45%,55%)` of `(STARTING_CAPITAL - eur - to_eur(second_good) )`.
 - `fourth_good` := the remaining capital.
 
 > In the initialization, good order is randomized.
@@ -29,7 +29,7 @@ The following rules are applied:
 
 - The market refuses **any** `lock buy` that would leave it with less than `25%` of the initial quantity of the asked good.
 
-- The market refuses **any** `lock sell` that would leave it with less than `25%` of the initial `eur` quantity.
+- The market refuses **any** `lock sell` that would leave it with less than `20%` of the initial `eur` quantity.
 
 - Define a value `mean` := for each good that is not EUR, convert it to EUR ( using default exchange rates ), sum them all together, then divide the obtained value by 3 ( which is the number of goods except EUR).  
 
@@ -43,19 +43,23 @@ $$ price = \left(\left(\frac{mean-goodqty}{mean\cdot 0.75}\cdot 0.1\right)+1\rig
 
 > This means that if a good it's at its minimum quantity, the trader will pay it 10% more than the default exchange rate.
 
-- If a good has its quantity between `(0%,5%)` over the `mean`, then the default price of that good will be used.
+- If a good has its quantity between `[0%,5%)` over the `mean`, then the default price of that good will be used.
 
-- If a good overcomes the mean by a percentage in range `(5%,10%)`, a favorable price will be applied, hence it will deflate by `2%` from the default price.
+- If a good overcomes the mean by a percentage in range `[5%,10%)`, a favorable price will be applied, hence it will deflate by `2%` from the default price.
 
-- If a good overcomes the mean by a percentage in range `(10%,30%)`, a favorable price will be applied, hence it will deflate by `2.5%` from the default price.
+- If a good overcomes the mean by a percentage in range `[10%,30%)`, a favorable price will be applied, hence it will deflate by `2.5%` from the default price.
 
-- If a good overcomes the mean by a percentage in range `(30%,60%)`, a favorable price will be applied, hence it will deflate by `3%` from the default price.
+- If a good overcomes the mean by a percentage in range `[30%,60%)`, a favorable price will be applied, hence it will deflate by `3%` from the default price.
 
 - If a good overcomes the mean by more than `60%`, a favorable price will be applied, hence it will deflate by `3.5%` from the default price.
 
-- The `sell price` is always lower than the `buy price`, by exactly `1%`
+- The `sell price` is always lower than the `buy price`, by exactly `7%`.
 
-- If the trader wants to buy a quantity in range `(30%,50%)` of a certain good, the market will apply a `2%` discount on the `buy price` indiscriminately.
+- If the trader wants to buy a quantity in range `[25%,30%)` of a certain good, the market will apply a `1%` discount on the `buy price` indiscriminately.
+
+- If the trader wants to buy a quantity in range `[30%,40%)` of a certain good, the market will apply a `1.5%` discount on the `buy price` indiscriminately.
+
+- If the trader wants to buy a quantity in range `[40%,50%)` of a certain good, the market will apply a `2.5%` discount on the `buy price` indiscriminately.
   
 - If the trader wants to buy more than `50%` of a certain good, the market will apply a `3.5%` discount on the `buy price` indiscriminately.
 
