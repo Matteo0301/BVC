@@ -76,21 +76,22 @@ How ?
 
 - Then the market will look for two goods, one that is `suffering` which means it's the one that is worth the less converted to euros and it's not **exported**, and the `chosen good` that is worth the most converted to euros and such that:  
 
-    $$chosenGood = \max(toEur(good)\ \forall good : toEur(good) > toEur(sufferingGood) \wedge notImported(good))$$
-    
-    <br>
+  $$chosenGood = \max(toEur(good)\ \forall good :$$
+  $$toEur(good) > toEur(sufferingGood) \wedge notImported(good)$$
+  <br>
 
-    Mark the `suffering good` as **imported** and the `chosen good` as **exported** 
-    > Note: The eur good will never be marked as Imported or Exported.
+  Mark the `suffering good` as **imported** and the `chosen good` as **exported** 
+  > Note: The eur good will never be marked as Imported or Exported.
 
-    Then take a part of the latter, which is:
+  Then take a part of the latter, which is:
 
-    $$convertedPart = toSufferingGoodKind(\min(mean-toEur(sufferingGood),toEur(chosenGood)-mean))$$
-    <br>
+  $$convertedPart = toSufferingGoodKind($$
+  $$min(mean-toEur(sufferingGood),toEur(chosenGood)-mean))$$
+  <br>
 
-    and then sum it to the `suffering` good.
+  and then sum it to the `suffering` good.
 
-> Note: every 100 days the market will reset the Exported/Imported status for each good.
+> Note: every 24 days the market will reset the Exported/Imported status for each good.
 
 ## Event reaction
 

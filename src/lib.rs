@@ -74,7 +74,7 @@ pub mod BVC {
 
     //Good fluctuation constants
     const PROBABILITY_OF_REBALANCE : f32 = 0.15;
-    const DURATION_OF_CHOSEN_KIND_OF_TRADE : u64 = 100;
+    const DURATION_OF_CHOSEN_KIND_OF_TRADE : u64 = 24;
     
     pub struct BVCMarket {
         time: u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
