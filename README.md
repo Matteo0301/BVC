@@ -33,12 +33,12 @@ The following rules are applied:
 
 - Define a value `mean` := for each good that is not EUR, convert it to EUR ( using default exchange rates ), sum them all together, then divide the obtained value by 3 ( which is the number of goods except EUR).  
 
-$$mean = \frac{\sum_{i=0}^{2}toeur(goods_i)}{3}$$
+$$mean = \frac{\sum_{i=0}^{2}toEur(goods_i)}{3}$$
 <br>
 
 - If a good has its quantity below the `mean` , (buy) price will fluctuate incrementally using this formula:
 
-$$ price = \left(\left(\frac{mean-goodqty}{mean\cdot 0.75}\cdot 0.1\right)+1\right)\cdot defaultprice$$
+$$ price = \left(\left(\frac{mean-goodQty}{mean\cdot 0.75}\cdot 0.1\right)+1\right)\cdot defaultPrice$$
 <br>
 
 > This means that if a good it's at its minimum quantity, the trader will pay it 10% more than the default exchange rate.
@@ -65,22 +65,32 @@ $$ price = \left(\left(\frac{mean-goodqty}{mean\cdot 0.75}\cdot 0.1\right)+1\rig
 
 ## Good conversion:
 
-The logic is trying to equalize good quantities, but not always, to avoid conflicts with the discount logic applyed in the price fluctuation
+The logic is trying to equalize good quantities, but not always, to avoid conflicts with the discount logic applyed in the price fluctuation.
 
-- If i have less than 30% of the initial quantity of a given good, it is `suffering`. To refill it, the market will take a good such that: 
+Every time the trader interacts with our or other markets by using `lock sell`, `lock buy`, `buy`, `sell`, there is a `10%` probability that the market will **try** to be rebalance its good quantities among the goods.  
 
-    $$chosengood = \max(toeur(good)) \ \forall good : (toeur(good) > eurgoodquantity \wedge isnotmarkedasexported(good))$$
+How ?
+
+- First compute this value:
+  $$mean = \frac{\sum_{i=0}^{3}toEur(goods_i)}{4}$$
+
+- Then the market will look for two goods, one that is `suffering` which means it's the one that is worth the less converted to euros and it's not **exported**, and the `chosen good` that is worth the most converted to euros and such that:  
+
+    $$chosenGood = \max(toEur(good)\ \forall good : toEur(good) > toEur(sufferingGood) \wedge notImported(good))$$
+    
     <br>
 
-    Then mark it as an exporter and with a `50%` probability take a part of it which is:
+    Mark the `suffering good` as **imported** and the `chosen good` as **exported** 
+    > Note: The eur good will never be marked as Imported or Exported.
 
-    $$convertedpart = \min(10000,0.5*(toeur(chosengood)-eurquantity))$$
+    Then take a part of the latter, which is:
+
+    $$convertedPart = toSufferingGoodKind(\min(mean-toEur(sufferingGood),toEur(chosenGood)-mean))$$
     <br>
 
     and then sum it to the `suffering` good.
 
-  - If the suffering good is `eur`, then the probability of conversion drops to 30% instead of being 50%
-
+> Note: every 100 days the market will reset the Exported/Imported status for each good.
 
 ## Event reaction
 

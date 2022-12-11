@@ -9,7 +9,6 @@ pub mod BVC {
     use std::{
         cell::RefCell,
         collections::{HashMap, HashSet},
-        //fmt::Error,
         fs::{File, OpenOptions},
         io::prelude::*,
         rc::Rc,
@@ -26,7 +25,7 @@ pub mod BVC {
         },
     };
     use TimeEnabler::{Skip, Use};
-
+    use KindOfTrade::{Unknown,Imported,Exported};
     use rand::{thread_rng, seq::SliceRandom};
     use rand::Rng;
 
@@ -72,6 +71,10 @@ pub mod BVC {
     const THIRD_LOCK_BUY_DISCOUNT : f32 = 0.975;
     const MAX_LOCK_BUY_DISCOUNT_LOWER_BOUND_QTY : f32 = 0.50;
     const MAX_LOCK_BUY_DISCOUNT : f32 = 0.965;
+
+    //Good fluctuation constants
+    const PROBABILITY_OF_REBALANCE : f32 = 0.15;
+    const DURATION_OF_CHOSEN_KIND_OF_TRADE : u64 = 100;
     
     pub struct BVCMarket {
         time: u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
@@ -93,11 +96,19 @@ pub mod BVC {
         Skip,
     }
 
+    #[derive(PartialEq)]
+    enum KindOfTrade{
+        Exported,
+        Imported,
+        Unknown,
+    }
+
     struct GoodInfo {
         info: Good,
         buy_exchange_rate: f32,
         sell_exchange_rate: f32,
         initialization_qty: f32,
+        kind_of_trade : KindOfTrade,
     }
 
     struct LockBuyGood {
@@ -244,8 +255,81 @@ pub mod BVC {
             self.fluctuate_quantity();
         }
 
-        //to implement fluctuation of the goods
-        fn fluctuate_quantity(&mut self) {}
+        // * This will try to rebalance all good quantities
+        fn fluctuate_quantity(&mut self) {
+
+            let mut rng = thread_rng();
+
+            if rng.gen_range(0.0,1.0) < PROBABILITY_OF_REBALANCE {
+
+                let mut good_transformed_quantities : HashMap<GoodKind,f32> = HashMap::new();
+
+                // * Calculate the mean to determine which good is suffering and which good is not
+                let mut mean : f32 = 0.0;
+                for (kind,good_info) in &mut self.good_data{
+                    if self.time % DURATION_OF_CHOSEN_KIND_OF_TRADE == 0 {
+                        good_info.kind_of_trade = Unknown;
+                    }
+                    match *kind{
+                        GoodKind::EUR => good_transformed_quantities.insert(GoodKind::EUR, good_info.info.get_qty()),
+                        GoodKind::USD => good_transformed_quantities.insert(GoodKind::USD, good_info.info.get_qty()*DEFAULT_USD_EUR_EXCHANGE_RATE),
+                        GoodKind::YEN => good_transformed_quantities.insert(GoodKind::YEN, good_info.info.get_qty()*DEFAULT_YEN_EUR_EXCHANGE_RATE),
+                        GoodKind::YUAN => good_transformed_quantities.insert( GoodKind::YUAN, good_info.info.get_qty()*DEFAULT_YUAN_EUR_EXCHANGE_RATE),
+                    };
+                    mean += good_transformed_quantities[kind];
+                }
+                mean/=4.0;
+
+                while let Some(((suffering_good_qty,suffering_good_kind),
+                    (eligible_good_qty,eligible_good_kind))) = self.find_goods_to_balance(&good_transformed_quantities, mean){
+                    
+                    if suffering_good_kind != GoodKind::EUR{
+                        self.good_data.get_mut(&suffering_good_kind).unwrap().kind_of_trade = Imported;
+                    }
+                    if eligible_good_kind != GoodKind::EUR{
+                        self.good_data.get_mut(&eligible_good_kind).unwrap().kind_of_trade = Exported;
+                    }
+
+                    let distance_to_fill = f32::min(mean-suffering_good_qty, eligible_good_qty-mean);
+                    let split_from_eligible_good = match eligible_good_kind{
+                        GoodKind::EUR => distance_to_fill,
+                        GoodKind::USD => distance_to_fill*DEFAULT_EUR_USD_EXCHANGE_RATE,
+                        GoodKind::YEN => distance_to_fill*DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                        GoodKind::YUAN => distance_to_fill*DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+                    };
+                    let merge_to_suffering_good = match suffering_good_kind{
+                        GoodKind::EUR => distance_to_fill,
+                        GoodKind::USD => distance_to_fill*DEFAULT_EUR_USD_EXCHANGE_RATE,
+                        GoodKind::YEN => distance_to_fill*DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                        GoodKind::YUAN => distance_to_fill*DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+                    };
+
+                    self.good_data.get_mut(&eligible_good_kind).unwrap().info.split(split_from_eligible_good);
+                    self.good_data.get_mut(&suffering_good_kind).unwrap().info.merge(Good::new(suffering_good_kind,merge_to_suffering_good));  
+                }
+            }
+        }
+
+        // * Retrieves which good is suffering and which one is eligible to transfer its quantities
+        fn find_goods_to_balance (&self, good_transformed_quantities: &HashMap<GoodKind,f32>, mean: f32) -> Option<((f32,GoodKind),(f32,GoodKind))> {
+            let (mut suffering_good,mut eligible_good) : (Option<(f32,GoodKind)>,Option<(f32,GoodKind)>) = (None,None);
+
+            for (kind,good_info) in &self.good_data{
+                let good_qty = good_transformed_quantities[kind];
+                if good_qty < mean && good_info.kind_of_trade != Exported{
+                    suffering_good = match suffering_good {
+                        Some(good) if good_qty < good.0 => Some((good_qty,*kind)),
+                        _ => suffering_good,
+                    };
+                }else if good_info.kind_of_trade != Imported{
+                    eligible_good = match eligible_good {
+                        Some(good) if good_qty > good.0 => Some((good_qty,*kind)),
+                        _ => eligible_good,
+                    };
+                }
+            }
+            suffering_good.zip(eligible_good)
+        }
 
         fn update_good_price(&mut self, kind: GoodKind) {
             if let Some(good_info) = self.good_data.get_mut(&kind) {
@@ -395,6 +479,7 @@ pub mod BVC {
                     buy_exchange_rate: 1.0,
                     sell_exchange_rate: 1.0,
                     initialization_qty: eur,
+                    kind_of_trade: Unknown,
                 },
             );
 
@@ -405,6 +490,7 @@ pub mod BVC {
                     buy_exchange_rate: 0.0,
                     sell_exchange_rate: 0.0,
                     initialization_qty: usd,
+                    kind_of_trade: Unknown,
                 },
             );
 
@@ -415,6 +501,7 @@ pub mod BVC {
                     buy_exchange_rate: 0.0,
                     sell_exchange_rate: 0.0,
                     initialization_qty: yen,
+                    kind_of_trade: Unknown,
                 },
             );
 
@@ -425,6 +512,7 @@ pub mod BVC {
                     buy_exchange_rate: 0.0,
                     sell_exchange_rate: 0.0,
                     initialization_qty: yuan,
+                    kind_of_trade: Unknown,
                 },
             );
 
