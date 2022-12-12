@@ -6,7 +6,7 @@ macro_rules! log_format_name_and_time {
 
 macro_rules! log_format_market_init {
     ($name:expr,$eur:expr, $usd:expr, $yen:expr, $yuan:expr) => {
-        format!("{}MARKET INITIALIZATION\nEUR: {:+e}\nUSD: {:+e}\nYEN: {}\nYUAN: {}\nEND MARKET INITIALIZATION\n\n",log_format_name_and_time!($name), $eur, $usd, $yen, $yuan)
+        format!("-----\n{}MARKET INITIALIZATION\nEUR: {:+e}\nUSD: {:+e}\nYEN: {:+e}\nYUAN: {:+e}\nEND MARKET INITIALIZATION\n\n",log_format_name_and_time!($name), $eur, $usd, $yen, $yuan)
     };
 }
 

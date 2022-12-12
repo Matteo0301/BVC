@@ -12,18 +12,18 @@ Here we will store the library files of our Market.
 
 ## Initial goods allocation:
 
+> Note: our market must be initialized with **new_random()** any other use will probably cause unwanted behaviour.
+
 - `eur` := random percentage in range `[25%,35%)` of `STARTING_CAPITAL`.
 - `second_good` := random percentage in range `[30%,36%)` of `(STARTING_CAPITAL - eur)`.
 - `third_good` := random percentage in range `[45%,55%)` of `(STARTING_CAPITAL - eur - to_eur(second_good) )`.
 - `fourth_good` := the remaining capital.
 
-> In the initialization, good order is randomized.
+> Note: In the initialization, good order is randomized.
 
 ## Price fluctuation:
 
 > **Premise**: `eur` always has a 1:1 conversion rate
-
-
 
 The following rules are applied:  
 
@@ -53,7 +53,7 @@ $$ price = \left(\left(\frac{mean-goodQty}{mean\cdot 0.75}\cdot 0.1\right)+1\rig
 
 - If a good overcomes the mean by more than `60%`, a favorable price will be applied, hence it will deflate by `3.5%` from the default price.
 
-- The `sell price` is always lower than the `buy price`, by exactly `7%`.
+- The `sell price` is always lower than the `buy price`, by exactly `1%`.
 
 - If the trader wants to buy a quantity in range `[25%,30%)` of a certain good, the market will apply a `1%` discount on the `buy price` indiscriminately.
 
