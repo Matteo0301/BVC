@@ -72,11 +72,17 @@ const MAX_LOCK_BUY_DISCOUNT_LOWER_BOUND_QTY : f32 = 0.50;
 const MAX_LOCK_BUY_DISCOUNT : f32 = 0.965;
 
 //Good fluctuation constants
-const PROBABILITY_OF_REBALANCE : f32 = 0.15;
+const PROBABILITY_OF_REBALANCE : f32 = 1.0;//0.15;
 const DURATION_OF_CHOSEN_KIND_OF_TRADE : u64 = 24;
 
 //Debug related
-const DEBUG : bool = false;
+const SHOW_MEAN : bool = true;
+const CHECK_IF_FLUCTUATION_OCCURS : bool = true;
+const CHECK_IF_FIND_GOODS_TO_FLUCTUATE : bool = true;
+const CHECK_IF_LOCK_BUY_DROPS : bool = true;
+const CHECK_IF_LOCK_SELL_DROPS : bool = true;
+const SHOW_BUY_DETAILS : bool = true;
+const CHECK_BUY_PRICE : bool = true;
 
 pub struct BVCMarket {
     time: u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
@@ -142,6 +148,9 @@ impl BVCMarket {
         // * Remove buy locks
         match &self.oldest_lock_buy_time {
             Use(oldest, token) if oldest + MAX_LOCK_TIME < self.time => {
+                if CHECK_IF_LOCK_BUY_DROPS {
+                    eprintln!("Discard of oldest lock buy is occurring");
+                }
                 let lock = self.buy_locks.get(token).unwrap();
                 let good = self
                     .good_data
@@ -184,6 +193,9 @@ impl BVCMarket {
         // * Remove sell locks
         match &self.oldest_lock_sell_time {
             Use(oldest, token) if oldest + MAX_LOCK_TIME < self.time => {
+                if CHECK_IF_LOCK_SELL_DROPS {
+                    eprintln!("Discard of oldest lock buy is occurring");
+                }
                 let lock = self.sell_locks.get(token).unwrap();
                 let good = self.good_data.get_mut(&GoodKind::EUR).unwrap();
                 match good.info.merge(lock.locked_eur.clone()) {
@@ -248,8 +260,8 @@ impl BVCMarket {
                 for (_, good) in &mut self.sell_locks {
                     good.lock_time -= oldest;
                 }
-                self.time -= oldest;
             }
+            self.time -= oldest;
         }
 
         self.update_locks();
@@ -263,7 +275,6 @@ impl BVCMarket {
         let mut rng = thread_rng();
 
         if rng.gen_range(0.0,1.0) < PROBABILITY_OF_REBALANCE {
-
             let mut good_transformed_quantities : HashMap<GoodKind,f32> = HashMap::new();
 
             // * Calculate the mean to determine which good is suffering and which good is not
@@ -282,8 +293,16 @@ impl BVCMarket {
             }
             mean/=4.0;
 
+            if CHECK_IF_FLUCTUATION_OCCURS {
+                eprintln!("Fluctuation is occurring with real time mean: {}", mean);
+            }
+
             while let Some(((suffering_good_qty,suffering_good_kind),
                 (eligible_good_qty,eligible_good_kind))) = self.find_goods_to_balance(&good_transformed_quantities, mean){
+                if CHECK_IF_FIND_GOODS_TO_FLUCTUATE{
+                    eprintln!("Before trading -> eligible good: {} with qty: {} ; suffering good: {} with qty: {}",
+                    eligible_good_kind, eligible_good_qty, suffering_good_kind, suffering_good_qty)
+                }
                 
                 if suffering_good_kind != GoodKind::EUR{
                     self.good_data.get_mut(&suffering_good_kind).unwrap().kind_of_trade = Imported;
@@ -307,7 +326,12 @@ impl BVCMarket {
                 };
 
                 self.good_data.get_mut(&eligible_good_kind).unwrap().info.split(split_from_eligible_good);
-                self.good_data.get_mut(&suffering_good_kind).unwrap().info.merge(Good::new(suffering_good_kind,merge_to_suffering_good));  
+                self.good_data.get_mut(&suffering_good_kind).unwrap().info.merge(Good::new(suffering_good_kind,merge_to_suffering_good));
+
+                if CHECK_IF_FIND_GOODS_TO_FLUCTUATE{
+                    eprintln!("After trading -> eligible good: {} with qty: {} ; suffering good: {} with qty: {}",
+                    eligible_good_kind,self.good_data[&eligible_good_kind].info.get_qty(), suffering_good_kind, self.good_data[&suffering_good_kind].info.get_qty())
+                }
             }
         }
     }
@@ -338,13 +362,13 @@ impl BVCMarket {
             let mut good_qty = good_info.info.get_qty();
 
             let default_price = match kind{
-                GoodKind::USD => DEFAULT_EUR_USD_EXCHANGE_RATE,
-                GoodKind::YEN => DEFAULT_EUR_YEN_EXCHANGE_RATE,
-                GoodKind::YUAN => DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+                GoodKind::USD => DEFAULT_USD_EUR_EXCHANGE_RATE,
+                GoodKind::YEN => DEFAULT_YEN_EUR_EXCHANGE_RATE,
+                GoodKind::YUAN => DEFAULT_YUAN_EUR_EXCHANGE_RATE,
                 GoodKind::EUR => panic!("Eur should not update its price !"),
             };
 
-            good_qty *= 1.0/default_price;
+            good_qty *= default_price;
             
             if good_qty < self.mean * DEFAULT_PRICE_LOWER_BOUND_QTY_PERCENTAGE{
                 good_info.buy_exchange_rate = (((self.mean-good_qty)*MAX_INFLATION_PRICE_INCREASE_PERCENTAGE/
@@ -371,7 +395,6 @@ impl BVCMarket {
         for m in &mut self.subscribers {
             m.on_event(event.clone())
         }
-        self.increment_time();
     }
 
     fn token(operation: String, trader: String, time: u64) -> String {
@@ -468,7 +491,7 @@ impl Market for BVCMarket {
             expired_tokens: HashSet::new(),
         };
 
-        if DEBUG {
+        if SHOW_MEAN {
             eprintln!("initialization_mean : {}",market.mean);
         }
         
@@ -555,6 +578,11 @@ impl Market for BVCMarket {
                 requested_good_kind: kind, requested_good_quantity: quantity, available_good_quantity: available_good_qty
             })
         }
+        
+        if CHECK_BUY_PRICE {
+            eprintln!("Requested good {} with qty: {}, and exchange rate: {}",kind, quantity,good_data.buy_exchange_rate);
+        }
+        
 
         let mut good_price = good_data.buy_exchange_rate*quantity;
         
@@ -737,6 +765,10 @@ impl Market for BVCMarket {
         self.buy_locks.remove(&token);
         self.active_buy_locks -= 1;
         if let Some(eur) = self.good_data.get_mut(&GoodKind::EUR) {
+            if SHOW_BUY_DETAILS {
+                eprintln!("Adding {} euros to wallet eur {}", eur_to_pay, eur.info.get_qty());
+            }
+
             eur.info.merge(cash.split(eur_to_pay).unwrap());
             self.notify_markets(Event {
                 kind: EventKind::Bought,
