@@ -72,7 +72,7 @@ const MAX_LOCK_BUY_DISCOUNT_LOWER_BOUND_QTY : f32 = 0.50;
 const MAX_LOCK_BUY_DISCOUNT : f32 = 0.965;
 
 //Good fluctuation constants
-const PROBABILITY_OF_REBALANCE : f32 = 0.0;//0.15;
+const PROBABILITY_OF_REBALANCE : f32 = 0.15;
 const DURATION_OF_CHOSEN_KIND_OF_TRADE : u64 = 24;
 
 //Debug related
@@ -101,6 +101,7 @@ pub struct BVCMarket {
     log_file: File,
 }
 
+#[derive(PartialEq)]
 enum TimeEnabler {
     Use(u64, String),
     Skip,
@@ -181,6 +182,9 @@ impl BVCMarket {
                     new_oldest
                 }
             }
+            Use(oldest, token) => if CHECK_IF_LOCK_BUY_DROPS {
+                eprintln!("Oldest token: {} with time: {} ; current time: {}", token, oldest, self.time);
+            },
             _ => (),
         }
 
@@ -196,16 +200,16 @@ impl BVCMarket {
         match &self.oldest_lock_sell_time {
             Use(oldest, token) if oldest + MAX_LOCK_TIME < self.time => {
                 if CHECK_IF_LOCK_SELL_DROPS {
-                    eprintln!("Discard of oldest lock buy is occurring");
+                    eprintln!("Discard of oldest lock sell is occurring");
                 }
                 let lock = self.sell_locks.get(token).unwrap();
                 let good = self.good_data.get_mut(&GoodKind::EUR).unwrap();
+
                 match good.info.merge(lock.locked_eur.clone()) {
                     Ok(_) => (),
                     Err(e) => panic!("Different kind of goods in merge attempt @update_locks, details: {:?}",e),
                 }
 
-                update_kind_price = Some(lock.locked_eur.get_kind());
                 self.sell_locks.remove(token);
                 self.expired_tokens.insert(token.clone());
                 self.active_sell_locks -= 1;
@@ -224,6 +228,9 @@ impl BVCMarket {
                     new_oldest
                 }
             }
+            Use(oldest, token) => if CHECK_IF_LOCK_SELL_DROPS {
+                eprintln!("Oldest token: {} with time: {} ; current time: {}", token, oldest, self.time);
+            },
             _ => (),
         }
 
@@ -330,9 +337,12 @@ impl BVCMarket {
                 self.good_data.get_mut(&eligible_good_kind).unwrap().info.split(split_from_eligible_good);
                 self.good_data.get_mut(&suffering_good_kind).unwrap().info.merge(Good::new(suffering_good_kind,merge_to_suffering_good));
 
+                *good_transformed_quantities.get_mut(&eligible_good_kind).unwrap() -= distance_to_fill;
+                *good_transformed_quantities.get_mut(&suffering_good_kind).unwrap() += distance_to_fill;
+
                 if CHECK_IF_FIND_GOODS_TO_FLUCTUATE{
                     eprintln!("After trading -> eligible good: {} with qty: {} ; suffering good: {} with qty: {}",
-                    eligible_good_kind,self.good_data[&eligible_good_kind].info.get_qty(), suffering_good_kind, self.good_data[&suffering_good_kind].info.get_qty())
+                    eligible_good_kind,good_transformed_quantities[&eligible_good_kind], suffering_good_kind, good_transformed_quantities[&suffering_good_kind])
                 }
             }
         }
@@ -347,15 +357,18 @@ impl BVCMarket {
             if good_qty < mean && good_info.kind_of_trade != Exported{
                 suffering_good = match suffering_good {
                     Some(good) if good_qty < good.0 => Some((good_qty,*kind)),
+                    None => Some((good_qty,*kind)),
                     _ => suffering_good,
                 };
-            }else if good_info.kind_of_trade != Imported{
+            }else if good_qty > mean && good_info.kind_of_trade != Imported{
                 eligible_good = match eligible_good {
                     Some(good) if good_qty > good.0 => Some((good_qty,*kind)),
+                    None => Some((good_qty,*kind)),
                     _ => eligible_good,
                 };
             }
         }
+
         suffering_good.zip(eligible_good)
     }
 
@@ -700,6 +713,10 @@ impl Market for BVCMarket {
             trader_name.clone(),
             self.time,
         );
+
+        if self.oldest_lock_buy_time == Skip {
+            self.oldest_lock_buy_time = Use(self.time,token.clone())
+        }
         
         // * Split the good, notify the markets and return the token
         if let Some(tmp) = self.good_data.get_mut(&kind_to_buy) {
@@ -850,6 +867,10 @@ impl Market for BVCMarket {
             trader_name.clone(),
             self.time,
         );
+
+        if self.oldest_lock_sell_time == Skip {
+            self.oldest_lock_sell_time = Use(self.time,token.clone())
+        }
         
         //* Split the eur good, notify the markets and return the token
         if let Some(tmp) = self.good_data.get_mut(&GoodKind::EUR) {
