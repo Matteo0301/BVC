@@ -257,11 +257,11 @@ impl BVCMarket {
             if oldest != std::u64::MAX {
                 self.oldest_lock_buy_time = match &self.oldest_lock_buy_time {
                     Use(time, token) => Use(time - oldest, token.clone()),
-                    Skip => panic!("Matching of this enum should not return Skip!"),
+                    Skip => Skip,
                 };
                 self.oldest_lock_sell_time = match &self.oldest_lock_sell_time {
                     Use(time, token) => Use(time - oldest, token.clone()),
-                    Skip => panic!("Matching of this enum should not return Skip!"),
+                    Skip => Skip,
                 };
                 for (_, good) in &mut self.buy_locks {
                     good.lock_time -= oldest;
