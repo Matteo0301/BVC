@@ -76,15 +76,15 @@ const PROBABILITY_OF_REBALANCE : f32 = 0.0;//0.15;
 const DURATION_OF_CHOSEN_KIND_OF_TRADE : u64 = 24;
 
 //Debug related
-const CHECK_IF_FLUCTUATION_OCCURS : bool = true;
-const CHECK_IF_FIND_GOODS_TO_FLUCTUATE : bool = true;
-const CHECK_IF_LOCK_BUY_DROPS : bool = true;
-const CHECK_IF_LOCK_SELL_DROPS : bool = true;
-const CHECK_BUY_PRICE : bool = true;
-const CHECK_SELL_PRICE : bool = true;
-const SHOW_BUY_DETAILS : bool = true;
-const SHOW_SELL_DETAILS : bool = true;
-const SHOW_MEAN : bool = true;
+const CHECK_IF_FLUCTUATION_OCCURS : bool = false;
+const CHECK_IF_FIND_GOODS_TO_FLUCTUATE : bool = false;
+const CHECK_IF_LOCK_BUY_DROPS : bool = false;
+const CHECK_IF_LOCK_SELL_DROPS : bool = false;
+const CHECK_BUY_PRICE : bool = false;
+const CHECK_SELL_PRICE : bool = false;
+const SHOW_BUY_DETAILS : bool = false;
+const SHOW_SELL_DETAILS : bool = false;
+const SHOW_MEAN : bool = false;
 
 pub struct BVCMarket {
     time: u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly

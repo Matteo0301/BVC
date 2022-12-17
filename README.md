@@ -38,7 +38,7 @@ $$mean = \frac{\sum_{i=0}^{2}toEur(goods_i)}{3}$$
 
 - If a good has its quantity below the `mean` , (buy) price will fluctuate incrementally using this formula:
 
-$$ price = \left(\left(\left(1.0-\frac{goodQty-(initialGoodQty\cdot 0.25)}{mean-(initialGoodQty\cdot 0.25)}\right)\cdot 0.1\right)+1.0\right)\cdot defaultPrice$$
+$$ price = \left(\left(\left(1.0-\frac{toEur(goodQty)-(toEur(initialGoodQty)\cdot 0.25)}{mean-(toEur(initialGoodQty)\cdot 0.25)}\right)\cdot 0.1\right)+1.0\right)\cdot defaultPrice$$
 <br>
 
 > This means that if a good it's at its minimum quantity, the trader will pay it 10% more than the default exchange rate.
