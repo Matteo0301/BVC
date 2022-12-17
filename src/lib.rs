@@ -72,17 +72,19 @@ const MAX_LOCK_BUY_DISCOUNT_LOWER_BOUND_QTY : f32 = 0.50;
 const MAX_LOCK_BUY_DISCOUNT : f32 = 0.965;
 
 //Good fluctuation constants
-const PROBABILITY_OF_REBALANCE : f32 = 1.0;//0.15;
+const PROBABILITY_OF_REBALANCE : f32 = 0.0;//0.15;
 const DURATION_OF_CHOSEN_KIND_OF_TRADE : u64 = 24;
 
 //Debug related
-const SHOW_MEAN : bool = true;
 const CHECK_IF_FLUCTUATION_OCCURS : bool = true;
 const CHECK_IF_FIND_GOODS_TO_FLUCTUATE : bool = true;
 const CHECK_IF_LOCK_BUY_DROPS : bool = true;
 const CHECK_IF_LOCK_SELL_DROPS : bool = true;
-const SHOW_BUY_DETAILS : bool = true;
 const CHECK_BUY_PRICE : bool = true;
+const CHECK_SELL_PRICE : bool = true;
+const SHOW_BUY_DETAILS : bool = true;
+const SHOW_SELL_DETAILS : bool = true;
+const SHOW_MEAN : bool = true;
 
 pub struct BVCMarket {
     time: u64, // needs to be reset before reaching U64::MAX and change transaction times accordingly
@@ -359,8 +361,6 @@ impl BVCMarket {
 
     fn update_good_price(&mut self, kind: GoodKind) {
         if let Some(good_info) = self.good_data.get_mut(&kind) {
-            let mut good_qty = good_info.info.get_qty();
-
             let default_price = match kind{
                 GoodKind::USD => DEFAULT_USD_EUR_EXCHANGE_RATE,
                 GoodKind::YEN => DEFAULT_YEN_EUR_EXCHANGE_RATE,
@@ -368,21 +368,21 @@ impl BVCMarket {
                 GoodKind::EUR => panic!("Eur should not update its price !"),
             };
 
-            good_qty *= default_price;
+            let (good_qty,initial_good_qty) = (good_info.info.get_qty()*default_price,good_info.initialization_qty*default_price);
             
             if good_qty < self.mean * DEFAULT_PRICE_LOWER_BOUND_QTY_PERCENTAGE{
-                good_info.buy_exchange_rate = (((self.mean-good_qty)*MAX_INFLATION_PRICE_INCREASE_PERCENTAGE/
-                                                (self.mean*(1.0-MINIMUM_GOOD_QUANTITY_PERCENTAGE)))+1.0)*default_price;
+                good_info.buy_exchange_rate = (((1.0-(good_qty-initial_good_qty*MINIMUM_GOOD_QUANTITY_PERCENTAGE)/
+                                                (self.mean-initial_good_qty*MINIMUM_GOOD_QUANTITY_PERCENTAGE))*MAX_INFLATION_PRICE_INCREASE_PERCENTAGE)+1.0)*default_price                 
             }else if good_qty < self.mean * FIRST_DEFLATION_PRICE_LOWER_BOUND_QTY_PERCENTAGE{
-                good_info.buy_exchange_rate = default_price;
+                good_info.buy_exchange_rate = default_price
             }else if good_qty < self.mean * SECOND_DEFLATION_PRICE_LOWER_BOUND_QTY_PERCENTAGE{
-                good_info.buy_exchange_rate = default_price*FIRST_DEFLATION_PRICE_DISCOUNT;
+                good_info.buy_exchange_rate = default_price*FIRST_DEFLATION_PRICE_DISCOUNT
             }else if good_qty < self.mean * THIRD_DEFLATION_PRICE_LOWER_BOUND_QTY_PERCENTAGE{
-                good_info.buy_exchange_rate = default_price*SECOND_DEFLATION_PRICE_DISCOUNT;
+                good_info.buy_exchange_rate = default_price*SECOND_DEFLATION_PRICE_DISCOUNT
             }else if good_qty < self.mean * MAX_DEFLATION_PRICE_LOWER_BOUND_QTY_PERCENTAGE{
-                good_info.buy_exchange_rate = default_price*THIRD_DEFLATION_PRICE_DISCOUNT;
+                good_info.buy_exchange_rate = default_price*THIRD_DEFLATION_PRICE_DISCOUNT
             }else{
-                good_info.buy_exchange_rate = default_price*MAX_DEFLATION_PRICE_DISCOUNT;
+                good_info.buy_exchange_rate = default_price*MAX_DEFLATION_PRICE_DISCOUNT
             }
             good_info.sell_exchange_rate = good_info.buy_exchange_rate*BUY_TO_SELL_PERCENTAGE
         }else{
@@ -583,7 +583,6 @@ impl Market for BVCMarket {
             eprintln!("Requested good {} with qty: {}, and exchange rate: {}",kind, quantity,good_data.buy_exchange_rate);
         }
         
-
         let mut good_price = good_data.buy_exchange_rate*quantity;
         
         // * Apply the discount
@@ -612,15 +611,25 @@ impl Market for BVCMarket {
         // * Getting the quantity availability
         let available_eur_qty = eur_data.info.get_qty();
         let quantity_cap = eur_data.initialization_qty*(1.0-MINIMUM_EUR_QUANTITY_PERCENTAGE);
-        let converted_quantity = self.good_data[&kind].sell_exchange_rate*quantity;
+        let price = self.good_data[&kind].sell_exchange_rate*quantity;
+        let converted_quantity = quantity * match kind{
+            GoodKind::EUR => 1.0,
+            GoodKind::USD => DEFAULT_USD_EUR_EXCHANGE_RATE,
+            GoodKind::YEN => DEFAULT_YEN_EUR_EXCHANGE_RATE,
+            GoodKind::YUAN => DEFAULT_YUAN_EUR_EXCHANGE_RATE,
+        };
 
         if converted_quantity > quantity_cap  {
             return Err(MarketGetterError::InsufficientGoodQuantityAvailable { 
-                requested_good_kind: GoodKind::EUR, requested_good_quantity: quantity, available_good_quantity: available_eur_qty 
+                requested_good_kind: GoodKind::EUR, requested_good_quantity: converted_quantity, available_good_quantity: available_eur_qty 
             })
         }
 
-        Ok(converted_quantity)
+        if CHECK_SELL_PRICE {
+            eprintln!("Requested good {} with qty: {}, and exchange rate: {}",kind, quantity, self.good_data[&kind].sell_exchange_rate);
+        }
+
+        Ok(price)
     }
 
     fn get_goods(&self) -> Vec<GoodLabel> {
@@ -915,6 +924,9 @@ impl Market for BVCMarket {
         self.sell_locks.remove(&token);
         self.active_sell_locks -= 1;
         if let Some(good_to_fill) = self.good_data.get_mut(&good.get_kind()) {
+            if SHOW_SELL_DETAILS {
+                eprintln!("Adding {} {} to wallet {} {}", lock_info.receiving_good_qty, lock_info.locked_kind,lock_info.locked_kind, good_to_fill.info.get_qty());
+            }
             
             good_to_fill.info.merge(good.split(lock_info.receiving_good_qty).unwrap());
 
@@ -926,6 +938,9 @@ impl Market for BVCMarket {
             });
 
             self.increment_time();
+            if lock_info.locked_kind != GoodKind::EUR {
+                self.update_good_price(lock_info.locked_kind);
+            }
             self.write_on_log_file(log_format_sell!(NAME,token,Ok()));
             Ok(lock_info.locked_eur)
         } else {
