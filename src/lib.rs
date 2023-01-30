@@ -1,4 +1,6 @@
 #![allow(non_snake_case)]
+#![allow(unused_must_use)]
+#![allow(unused_assignments)]
 
 //!# BVC Market
 //!
@@ -278,13 +280,12 @@ impl BVCMarket {
                 self.oldest_lock_buy_time = if self.buy_locks.len() == 0 {
                     Skip
                 } else {
-                    let mut new_oldest = Use(self.time, String::new());
+                    let mut new_oldest = Skip;
                     for (token, good) in &self.buy_locks {
-                        new_oldest = match new_oldest {
-                            Use(time, _) if good.lock_time < time => {
-                                Use(good.lock_time, token.clone())
-                            }
-                            _ => panic!("Should not return a Skip value"),
+                        match new_oldest {
+                            Use(time, _) if good.lock_time < time  => new_oldest = Use(good.lock_time, token.clone()),
+                            Skip => new_oldest = Use(good.lock_time, token.clone()),
+                            _ => (),
                         }
                     }
                     new_oldest
@@ -332,13 +333,12 @@ impl BVCMarket {
                 self.oldest_lock_sell_time = if self.sell_locks.len() == 0 {
                     Skip
                 } else {
-                    let mut new_oldest = Use(self.time, String::new());
+                    let mut new_oldest = Skip;
                     for (token, good) in &self.sell_locks {
-                        new_oldest = match new_oldest {
-                            Use(time, _) if good.lock_time < time => {
-                                Use(good.lock_time, token.clone())
-                            }
-                            other => other,
+                        match new_oldest {
+                            Use(time, _) if good.lock_time < time => new_oldest = Use(good.lock_time, token.clone()),
+                            Skip => new_oldest = Use(good.lock_time, token.clone()),
+                            _ => (),
                         }
                     }
                     new_oldest
@@ -366,16 +366,16 @@ impl BVCMarket {
     fn increment_time(&mut self) {
         // * Managing the time overflow
         if self.time == std::u64::MAX {
-            let oldest_lock_buy = match self.oldest_lock_buy_time {
-                Skip => std::u64::MAX,
-                Use(time, _) => time,
-            };
-            let oldest_lock_sell = match self.oldest_lock_sell_time {
-                Skip => std::u64::MAX,
-                Use(time, _) => time,
-            };
-            let oldest = std::cmp::min(oldest_lock_buy, oldest_lock_sell);
-            if oldest != std::u64::MAX {
+            let mut shift_transactions = true;
+            let mut oldest = std::u64::MAX;
+       
+            match (&self.oldest_lock_buy_time, &self.oldest_lock_sell_time){
+                (Use(time1, _),Use(time2,_)) => oldest = std::cmp::min(*time1,*time2),
+                (Use(time,_),_) | (_,Use(time,_)) => oldest = *time,
+                (Skip,Skip) => shift_transactions = false,
+            }
+            
+            if shift_transactions {
                 self.oldest_lock_buy_time = match &self.oldest_lock_buy_time {
                     Use(time, token) => Use(time - oldest, token.clone()),
                     Skip => Skip,
@@ -390,6 +390,7 @@ impl BVCMarket {
                 for (_, good) in &mut self.sell_locks {
                     good.lock_time -= oldest;
                 }
+                self.expired_tokens.clear();
             }
             self.time -= oldest;
         }
@@ -589,7 +590,7 @@ impl Notifiable for BVCMarket {
     fn add_subscriber(&mut self, subscriber: Box<dyn Notifiable>) {
         self.subscribers.push(subscriber);
     }
-    fn on_event(&mut self, event: Event) {
+    fn on_event(&mut self, _event: Event) {
         self.increment_time();
         /* match event.kind {
             EventKind::Wait => self.increment_time(),
@@ -738,7 +739,7 @@ impl Market for BVCMarket {
         Rc::new(RefCell::new(market))
     }
 
-    fn new_file(path: &str) -> Rc<RefCell<dyn Market>>
+    fn new_file(_path: &str) -> Rc<RefCell<dyn Market>>
     where
         Self: Sized,
     {
@@ -808,18 +809,11 @@ impl Market for BVCMarket {
         let available_eur_qty = eur_data.info.get_qty();
         let quantity_cap = eur_data.initialization_qty * MINIMUM_EUR_QUANTITY_PERCENTAGE;
         let price = self.good_data[&kind].sell_exchange_rate * quantity;
-        let converted_quantity = quantity
-            * match kind {
-                GoodKind::EUR => 1.0,
-                GoodKind::USD => DEFAULT_USD_EUR_EXCHANGE_RATE,
-                GoodKind::YEN => DEFAULT_YEN_EUR_EXCHANGE_RATE,
-                GoodKind::YUAN => DEFAULT_YUAN_EUR_EXCHANGE_RATE,
-            };
 
-        if available_eur_qty - converted_quantity < quantity_cap {
+        if available_eur_qty - price < quantity_cap {
             return Err(MarketGetterError::InsufficientGoodQuantityAvailable {
                 requested_good_kind: GoodKind::EUR,
-                requested_good_quantity: converted_quantity,
+                requested_good_quantity: price,
                 available_good_quantity: available_eur_qty,
             });
         }
@@ -1012,6 +1006,24 @@ impl Market for BVCMarket {
         let eur_to_pay = self.buy_locks[&token].buy_price;
         let locked_good = self.buy_locks[&token].locked_good.clone(); // * There was a clone here
         self.buy_locks.remove(&token);
+        
+        // * Updates the oldest lock if bought one was the oldest
+        match &self.oldest_lock_buy_time {
+            Use(_,tok) if *tok == token => {
+                let mut oldest_lock = Skip;
+                for (tk,good_lock) in &self.buy_locks{
+                    let cmp_time = good_lock.lock_time;
+                    match oldest_lock {
+                        Use(time,_) if cmp_time < time => oldest_lock = Use(cmp_time,tk.clone()),
+                        Skip => oldest_lock = Use(cmp_time,tk.clone()),
+                        _ => (),
+                    }
+                }
+                self.oldest_lock_buy_time = oldest_lock;
+            },
+            _ => (),
+        }
+
         self.active_buy_locks -= 1;
         if let Some(eur) = self.good_data.get_mut(&GoodKind::EUR) {
             if SHOW_BUY_DETAILS {
@@ -1205,6 +1217,24 @@ impl Market for BVCMarket {
         // * Merge the good from the trader, notify other markets and return the locked eur pre agreed quantity
         let lock_info = self.sell_locks[&token].clone();
         self.sell_locks.remove(&token);
+
+        // * Updates the oldest lock if bought one was the oldest
+        match &self.oldest_lock_buy_time {
+            Use(_,tok) if *tok == token => {
+                let mut oldest_lock = Skip;
+                for (tk,good_lock) in &self.sell_locks{
+                    let cmp_time = good_lock.lock_time;
+                    match oldest_lock {
+                        Use(time,_) if cmp_time < time => oldest_lock = Use(cmp_time,tk.clone()),
+                        Skip => oldest_lock = Use(cmp_time,tk.clone()),
+                        _ => (),
+                    }
+                }
+                self.oldest_lock_buy_time = oldest_lock;
+            },
+            _ => (),
+        }
+
         self.active_sell_locks -= 1;
         if let Some(good_to_fill) = self.good_data.get_mut(&good.get_kind()) {
             if SHOW_SELL_DETAILS {
