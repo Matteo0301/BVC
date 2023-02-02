@@ -1227,7 +1227,7 @@ impl Market for BVCMarket {
         self.sell_locks.remove(&token);
 
         // * Updates the oldest lock if bought one was the oldest
-        match &self.oldest_lock_buy_time {
+        match &self.oldest_lock_sell_time {
             Use(_,tok) if *tok == token => {
                 let mut oldest_lock = Skip;
                 for (tk,good_lock) in &self.sell_locks{
@@ -1238,7 +1238,7 @@ impl Market for BVCMarket {
                         _ => (),
                     }
                 }
-                self.oldest_lock_buy_time = oldest_lock;
+                self.oldest_lock_sell_time = oldest_lock;
             },
             _ => (),
         }
